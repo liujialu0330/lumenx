@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Paintbrush, User, MapPin, Box, Lock, Unlock, RefreshCw, Upload, Image as ImageIcon, X, Check, Settings, ChevronRight, Trash2, Plus } from "lucide-react";
+import { Paintbrush, User, MapPin, Box, Lock, Unlock, RefreshCw, Upload, Image as ImageIcon, X, Check, Settings, ChevronRight, Trash2, Plus, Link as LinkIcon } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL, crudApi } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
 import CharacterWorkbench from "./CharacterWorkbench";
 import { VariantSelector } from "../common/VariantSelector";
 import { VideoVariantSelector } from "../common/VideoVariantSelector";
+import UploadAssetModal from "../modals/UploadAssetModal";
 
 export default function ConsistencyVault() {
     const currentProject = useProjectStore((state) => state.currentProject);
@@ -36,6 +37,10 @@ export default function ConsistencyVault() {
 
     // Create asset dialog state
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+
+    // Upload modal state
+    const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+    const [uploadTarget, setUploadTarget] = useState<{ id: string; type: string; name: string; description: string } | null>(null);
 
     // Derive selected asset from currentProject
     const selectedAsset = currentProject ? (() => {
@@ -335,6 +340,25 @@ export default function ConsistencyVault() {
         }
     };
 
+    // Upload handlers
+    const handleOpenUploadModal = (asset: any, type: string) => {
+        setUploadTarget({
+            id: asset.id,
+            type: type,
+            name: asset.name,
+            description: asset.description
+        });
+        setIsUploadModalOpen(true);
+    };
+
+    const handleUploadComplete = async (updatedScript: any) => {
+        if (currentProject) {
+            updateProject(currentProject.id, updatedScript);
+        }
+        setIsUploadModalOpen(false);
+        setUploadTarget(null);
+    };
+
     const assets = activeTab === "character" ? currentProject?.characters :
         activeTab === "scene" ? currentProject?.scenes :
             activeTab === "prop" ? currentProject?.props : [];
@@ -414,6 +438,7 @@ export default function ConsistencyVault() {
                                     setSelectedAssetType(activeTab);
                                 }}
                                 onDelete={() => handleDeleteAsset(asset.id, activeTab)}
+                                onUpload={() => handleOpenUploadModal(asset, activeTab)}
                             />
                         ))}
                         {/* Create New Asset Button */}
@@ -499,6 +524,23 @@ export default function ConsistencyVault() {
                     />
                 )}
             </AnimatePresence>
+
+            {/* Upload Asset Modal */}
+            {uploadTarget && currentProject && (
+                <UploadAssetModal
+                    isOpen={isUploadModalOpen}
+                    onClose={() => {
+                        setIsUploadModalOpen(false);
+                        setUploadTarget(null);
+                    }}
+                    assetId={uploadTarget.id}
+                    assetType={uploadTarget.type as "character" | "scene" | "prop"}
+                    assetName={uploadTarget.name}
+                    defaultDescription={uploadTarget.description}
+                    scriptId={currentProject.id}
+                    onUploadComplete={handleUploadComplete}
+                />
+            )}
         </div >
     );
 }
@@ -812,7 +854,7 @@ function ImageWithRetry({ src, alt, className }: { src: string, alt: string, cla
     );
 }
 
-function AssetCard({ asset, type, isGenerating, onGenerate, onToggleLock, onClick, onDelete }: any) {
+function AssetCard({ asset, type, isGenerating, onGenerate, onToggleLock, onClick, onDelete, onUpload }: any) {
     const isLocked = asset.locked || false;
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
@@ -919,13 +961,16 @@ function AssetCard({ asset, type, isGenerating, onGenerate, onToggleLock, onClic
                         <RefreshCw size={14} className={isGenerating ? "animate-spin" : ""} />
                         {isGenerating ? "Generating..." : "Generate"}
                     </button>
-                    <label
-                        onClick={(e) => e.stopPropagation()}
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onUpload?.();
+                        }}
                         className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white cursor-pointer transition-colors"
+                        title="上传图片"
                     >
                         <Upload size={14} />
-                        <input type="file" className="hidden" accept="image/*" onChange={handleUpload} />
-                    </label>
+                    </button>
                 </div>
             </div>
         </motion.div>

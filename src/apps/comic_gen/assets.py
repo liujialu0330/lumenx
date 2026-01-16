@@ -70,6 +70,7 @@ class AssetGenerator:
                 # Use provided prompt or construct default
                 if not prompt:
                     # Default prompt - no style included, emphasize clean background
+                    # If there's a reference image (reverse generation), emphasize consistency
                     base_prompt = f"Full body character design of {character.name}, concept art. {character.description}. Standing pose, neutral expression, no emotion, looking at viewer. Clean white background, isolated, no other objects, no scenery, simple background, high quality, masterpiece."
                 else:
                     base_prompt = prompt
@@ -87,6 +88,43 @@ class AssetGenerator:
                     if os.path.exists(base_fullbody_path):
                         ref_image_path = base_fullbody_path
 
+                # === REVERSE GENERATION: Check for uploaded images to use as reference ===
+                # Priority: Three Views > Headshot (uploaded images)
+                if not ref_image_path:
+                    # Check for uploaded three_views
+                    if character.three_view_asset:
+                        uploaded_variant = next(
+                            (v for v in character.three_view_asset.variants if getattr(v, 'is_uploaded_source', False)),
+                            None
+                        )
+                        if uploaded_variant:
+                            ref_url = uploaded_variant.url
+                            if is_object_key(ref_url):
+                                ref_image_path = ref_url
+                                logger.info(f"Reverse generation: Using uploaded three_views as reference: {ref_url}")
+                            else:
+                                local_path = os.path.join("output", ref_url)
+                                if os.path.exists(local_path):
+                                    ref_image_path = local_path
+                                    logger.info(f"Reverse generation: Using local three_views as reference: {local_path}")
+                    
+                    # Check for uploaded headshot
+                    if not ref_image_path and character.headshot_asset:
+                        uploaded_variant = next(
+                            (v for v in character.headshot_asset.variants if getattr(v, 'is_uploaded_source', False)),
+                            None
+                        )
+                        if uploaded_variant:
+                            ref_url = uploaded_variant.url
+                            if is_object_key(ref_url):
+                                ref_image_path = ref_url
+                                logger.info(f"Reverse generation: Using uploaded headshot as reference: {ref_url}")
+                            else:
+                                local_path = os.path.join("output", ref_url)
+                                if os.path.exists(local_path):
+                                    ref_image_path = local_path
+                                    logger.info(f"Reverse generation: Using local headshot as reference: {local_path}")
+
                 # Batch Generation Loop
                 successful_generations = 0
                 for i in range(batch_size):
@@ -95,7 +133,21 @@ class AssetGenerator:
                         fullbody_path = os.path.join(self.output_dir, 'characters', f"{character.id}_fullbody_{variant_id}.png")
                         os.makedirs(os.path.dirname(fullbody_path), exist_ok=True)
                         
-                        self.model.generate(generation_prompt, fullbody_path, ref_image_path=ref_image_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
+                        # Select model: use I2I model (wan2.6-image) when reference image is provided
+                        effective_model_name = model_name
+                        effective_generation_prompt = generation_prompt
+                        if ref_image_path:
+                            # Override to I2I model when using reference image
+                            effective_model_name = i2i_model_name or "wan2.6-image"
+                            logger.info(f"Reverse generation: Using I2I model {effective_model_name} with reference image")
+                            
+                            # Enhance prompt for reverse generation to emphasize reference consistency (only if not already present)
+                            reverse_enhancement = "STRICTLY MAINTAIN the SAME character appearance, face, hairstyle, skin tone, and clothing as the reference image. "
+                            if reverse_enhancement.strip() not in effective_generation_prompt:
+                                effective_generation_prompt = f"{reverse_enhancement}{generation_prompt}"
+                                logger.info(f"Reverse generation enhanced prompt: {effective_generation_prompt[:100]}...")
+                        
+                        self.model.generate(effective_generation_prompt, fullbody_path, ref_image_path=ref_image_path, negative_prompt=negative_prompt, model_name=effective_model_name, size=effective_size)
                         
                         rel_fullbody_path = os.path.relpath(fullbody_path, "output")
                         
@@ -165,18 +217,58 @@ class AssetGenerator:
                 if selected_variant:
                     current_full_body_url = selected_variant.url
 
-            if generation_type in ["three_view", "headshot"] and not current_full_body_url:
-                raise ValueError("Full body image is required to generate derived assets.")
+            # === REVERSE GENERATION: Allow using uploaded images as reference if no full body ===
+            # Check for uploaded images to use as reference when no full body exists
+            uploaded_reference_url = None
+            if not current_full_body_url:
+                # Check for any uploaded image that can be used as reference
+                # Priority: The asset type being generated > other types
+                if generation_type == "three_view" and character.headshot_asset:
+                    # If generating three_view, check for uploaded headshot
+                    uploaded_variant = next(
+                        (v for v in character.headshot_asset.variants if getattr(v, 'is_uploaded_source', False)),
+                        None
+                    )
+                    if uploaded_variant:
+                        uploaded_reference_url = uploaded_variant.url
+                        logger.info(f"Reverse generation: Will use uploaded headshot as reference for three_view")
+                
+                elif generation_type == "headshot" and character.three_view_asset:
+                    # If generating headshot, check for uploaded three_views
+                    uploaded_variant = next(
+                        (v for v in character.three_view_asset.variants if getattr(v, 'is_uploaded_source', False)),
+                        None
+                    )
+                    if uploaded_variant:
+                        uploaded_reference_url = uploaded_variant.url
+                        logger.info(f"Reverse generation: Will use uploaded three_views as reference for headshot")
+                
+                # Also check own asset type for uploaded source
+                if not uploaded_reference_url:
+                    own_asset = character.three_view_asset if generation_type == "three_view" else character.headshot_asset
+                    if own_asset:
+                        uploaded_variant = next(
+                            (v for v in own_asset.variants if getattr(v, 'is_uploaded_source', False)),
+                            None
+                        )
+                        if uploaded_variant:
+                            uploaded_reference_url = uploaded_variant.url
+                            logger.info(f"Reverse generation: Will use own uploaded image as reference")
+
+            if generation_type in ["three_view", "headshot"] and not current_full_body_url and not uploaded_reference_url:
+                raise ValueError("Full body image is required to generate derived assets. Upload an image or generate a full body first.")
             
             # Handle reference image path: could be OSS Object Key or local path
-            if current_full_body_url:
-                if is_object_key(current_full_body_url):
+            # Prioritize full body, fall back to uploaded reference
+            reference_url = current_full_body_url or uploaded_reference_url
+            if reference_url:
+                if is_object_key(reference_url):
                     # OSS Object Key - pass directly, image.py will handle signing
-                    fullbody_path = current_full_body_url
-                    logger.info(f"Using OSS Object Key for reference: {current_full_body_url}")
+                    fullbody_path = reference_url
+                    logger.info(f"Using OSS Object Key for reference: {reference_url}")
                 else:
                     # Local relative path - prepend output directory
-                    fullbody_path = os.path.join("output", current_full_body_url)
+                    fullbody_path = os.path.join("output", reference_url)
                     logger.info(f"Using local path for reference: {fullbody_path}")
             else:
                 fullbody_path = None
@@ -184,7 +276,8 @@ class AssetGenerator:
             # 2. Three View Sheet (Derived)
             if generation_type in ["all", "three_view"]:
                 if not prompt or generation_type == "all":
-                    base_prompt = f"Character Reference Sheet for {character.name}. {character.description}. Three-view character design: Front view, Side view, and Back view. Full body, standing pose, neutral expression. Consistent clothing and details across all views. Simple white background, clean lines, studio lighting, high quality."
+                    # Add reference consistency emphasis
+                    base_prompt = f"Character Reference Sheet for {character.name}. {character.description}. Three-view character design: Front view, Side view, and Back view. STRICTLY MAINTAIN the SAME character appearance, face, hairstyle, and clothing as the reference image. Full body, standing pose, neutral expression. Consistent clothing and details across all views. Simple white background, clean lines, studio lighting, high quality."
                 else:
                     base_prompt = prompt
                 
@@ -261,7 +354,8 @@ class AssetGenerator:
             # 3. Headshot (Derived)
             if generation_type in ["all", "headshot"]:
                 if not prompt or generation_type == "all":
-                    base_prompt = f"Close-up portrait of the SAME character {character.name}. {character.description}. Zoom in on face and shoulders, detailed facial features, neutral expression, looking at viewer, high quality, masterpiece."
+                    # Add reference consistency emphasis
+                    base_prompt = f"Close-up portrait of the SAME character {character.name}. {character.description}. STRICTLY MAINTAIN the SAME face, hairstyle, skin tone, and facial features as the reference image. Zoom in on face and shoulders, detailed facial features, neutral expression, looking at viewer, high quality, masterpiece."
                 else:
                     base_prompt = prompt
                 

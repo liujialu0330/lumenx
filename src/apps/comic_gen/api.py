@@ -19,7 +19,9 @@ from dotenv import load_dotenv, set_key
 # Setup logging to user directory
 setup_logging()
 
-env_path = ".env"
+# Use absolute path for .env file (api.py is in src/apps/comic_gen/)
+_project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+env_path = os.path.join(_project_root, ".env")
 if os.path.exists(env_path):
     load_dotenv(env_path, override=True)
 
@@ -140,6 +142,65 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class UploadAssetRequest(BaseModel):
+    upload_type: str  # "full_body" | "head_shot" | "three_views" | "image"
+    description: Optional[str] = None  # User-modified description for reverse generation
+
+
+@app.post("/projects/{script_id}/assets/{asset_type}/{asset_id}/upload")
+async def upload_asset(
+    script_id: str,
+    asset_type: str,
+    asset_id: str,
+    upload_type: str,
+    description: Optional[str] = None,
+    file: UploadFile = File(...)
+):
+    """
+    Uploads an image as a new variant for an asset.
+    The uploaded image is marked as the 'upload source' for reverse generation.
+    
+    - asset_type: "character", "scene", or "prop"
+    - upload_type: "full_body", "head_shot", "three_views", or "image" (for scene/prop)
+    - description: Optional modified description for the asset
+    """
+    try:
+        # 1. Save file locally first
+        file_ext = os.path.splitext(file.filename)[1]
+        filename = f"{uuid.uuid4()}{file_ext}"
+        file_path = os.path.join("output/uploads", filename)
+        
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # 2. Upload to OSS
+        uploader = OSSImageUploader()
+        oss_url = uploader.upload_image(file_path)
+        if not oss_url:
+            oss_url = f"uploads/{filename}"  # Fallback to local path
+        
+        # 3. Update asset with new variant
+        updated_script = pipeline.add_uploaded_asset_variant(
+            script_id=script_id,
+            asset_type=asset_type,
+            asset_id=asset_id,
+            upload_type=upload_type,
+            image_url=oss_url,
+            description=description
+        )
+        
+        if not updated_script:
+            raise HTTPException(status_code=404, detail="Script or asset not found")
+        
+        return signed_response(updated_script)
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Error uploading asset: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class CreateProjectRequest(BaseModel):
     title: str
     text: str
@@ -202,7 +263,9 @@ def get_user_config_path() -> str:
         return os.path.join(config_dir, "config.json")
     else:
         # Use .env in project root for development
-        return ".env"
+        # Get absolute path to project root (api.py is in src/apps/comic_gen/)
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        return os.path.join(project_root, ".env")
 
 
 

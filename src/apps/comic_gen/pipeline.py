@@ -577,6 +577,139 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
+    def add_uploaded_asset_variant(
+        self, 
+        script_id: str, 
+        asset_type: str, 
+        asset_id: str, 
+        upload_type: str, 
+        image_url: str, 
+        description: Optional[str] = None
+    ) -> Script:
+        """
+        Adds an uploaded image as a new variant to an asset.
+        The uploaded image is marked with is_uploaded_source=True.
+        
+        Args:
+            script_id: The project ID
+            asset_type: "character", "scene", or "prop"
+            asset_id: The asset ID
+            upload_type: "full_body", "head_shot", "three_views", or "image"
+            image_url: URL of the uploaded image (OSS Object Key)
+            description: Optional modified description for reverse generation
+        """
+        from .models import ImageVariant, AssetUnit
+        
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+        
+        # Find target asset
+        target_asset = None
+        if asset_type == "character":
+            target_asset = next((c for c in script.characters if c.id == asset_id), None)
+        elif asset_type == "scene":
+            target_asset = next((s for s in script.scenes if s.id == asset_id), None)
+        elif asset_type == "prop":
+            target_asset = next((p for p in script.props if p.id == asset_id), None)
+        
+        if not target_asset:
+            raise ValueError(f"Asset {asset_id} of type {asset_type} not found")
+        
+        # Create new variant with upload source flag
+        new_variant = ImageVariant(
+            id=str(uuid.uuid4()),
+            url=image_url,
+            prompt_used=description or target_asset.description,
+            is_uploaded_source=True,
+            upload_type=upload_type
+        )
+        
+        # Update description if provided
+        if description:
+            target_asset.description = description
+        
+        # Add variant to the appropriate asset unit
+        if asset_type == "character":
+            # Map upload_type to the correct asset unit
+            if upload_type == "full_body":
+                target_unit = target_asset.full_body
+            elif upload_type == "head_shot":
+                target_unit = target_asset.head_shot
+            elif upload_type == "three_views":
+                target_unit = target_asset.three_views
+            else:
+                raise ValueError(f"Invalid upload_type for character: {upload_type}")
+            
+            # Ensure AssetUnit exists
+            if target_unit is None:
+                target_unit = AssetUnit()
+                if upload_type == "full_body":
+                    target_asset.full_body = target_unit
+                elif upload_type == "head_shot":
+                    target_asset.head_shot = target_unit
+                elif upload_type == "three_views":
+                    target_asset.three_views = target_unit
+            
+            # Add variant and select it
+            target_unit.image_variants.append(new_variant)
+            target_unit.selected_image_id = new_variant.id
+            target_unit.image_updated_at = time.time()
+            
+            # === ALSO UPDATE LEGACY FIELDS for frontend compatibility ===
+            # Create variant for legacy ImageAsset structure
+            legacy_variant = ImageVariant(
+                id=new_variant.id,
+                url=image_url,
+                prompt_used=description or target_asset.description,
+                is_uploaded_source=True,
+                upload_type=upload_type
+            )
+            
+            if upload_type == "full_body":
+                # Ensure full_body_asset exists
+                if target_asset.full_body_asset is None:
+                    from .models import ImageAsset
+                    target_asset.full_body_asset = ImageAsset()
+                target_asset.full_body_asset.variants.append(legacy_variant)
+                target_asset.full_body_asset.selected_id = new_variant.id
+                target_asset.full_body_image_url = image_url
+            elif upload_type == "head_shot":
+                # Ensure headshot_asset exists
+                if target_asset.headshot_asset is None:
+                    from .models import ImageAsset
+                    target_asset.headshot_asset = ImageAsset()
+                target_asset.headshot_asset.variants.append(legacy_variant)
+                target_asset.headshot_asset.selected_id = new_variant.id
+                target_asset.headshot_image_url = image_url
+            elif upload_type == "three_views":
+                # Ensure three_view_asset exists
+                if target_asset.three_view_asset is None:
+                    from .models import ImageAsset
+                    target_asset.three_view_asset = ImageAsset()
+                target_asset.three_view_asset.variants.append(legacy_variant)
+                target_asset.three_view_asset.selected_id = new_variant.id
+                target_asset.three_view_image_url = image_url
+            
+            logger.info(f"Added uploaded variant {new_variant.id} to character {asset_id} {upload_type}")
+            
+        elif asset_type in ["scene", "prop"]:
+            # Scene and Prop have a single 'image' asset unit
+            if not hasattr(target_asset, 'image') or target_asset.image is None:
+                target_asset.image = AssetUnit()
+            
+            target_asset.image.image_variants.append(new_variant)
+            target_asset.image.selected_image_id = new_variant.id
+            target_asset.image.image_updated_at = time.time()
+            
+            # Also update legacy image_url field
+            target_asset.image_url = image_url
+            
+            logger.info(f"Added uploaded variant {new_variant.id} to {asset_type} {asset_id}")
+        
+        self._save_data()
+        return script
+
     def update_project_style(self, script_id: str, style_preset: str, style_prompt: Optional[str] = None) -> Script:
         """Updates the global style settings for a project."""
         script = self.scripts.get(script_id)

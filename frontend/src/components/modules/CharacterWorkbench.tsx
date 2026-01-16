@@ -47,10 +47,39 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
     const [isVideoLoading, setIsVideoLoading] = useState(false);
 
 
+    // === Reverse Generation: Detect uploaded images ===
+    const hasUploadedThreeViews = asset.three_view_asset?.variants?.some((v: any) => v.is_uploaded_source) || false;
+    const hasUploadedHeadshot = asset.headshot_asset?.variants?.some((v: any) => v.is_uploaded_source) || false;
+    const hasUploadedFullBody = asset.full_body_asset?.variants?.some((v: any) => v.is_uploaded_source) || false;
+    const hasAnyUpload = hasUploadedThreeViews || hasUploadedHeadshot || hasUploadedFullBody;
+    const hasNonFullBodyUpload = hasUploadedThreeViews || hasUploadedHeadshot;
+    const hasFullBodyImage = !!(asset.full_body_image_url || (asset.full_body_asset?.variants?.length > 0));
+
     // Local state for prompts
-    const [fullBodyPrompt, setFullBodyPrompt] = useState(asset.full_body_prompt || "");
-    const [threeViewPrompt, setThreeViewPrompt] = useState(asset.three_view_prompt || "");
-    const [headshotPrompt, setHeadshotPrompt] = useState(asset.headshot_prompt || "");
+    const getInitialPrompt = (type: string, existingPrompt: string) => {
+        if (existingPrompt) return existingPrompt;
+
+        const baseDesc = asset.description || "";
+        const name = asset.name || "Character";
+
+        if (type === "full_body") {
+            const prefix = hasNonFullBodyUpload ? "STRICTLY MAINTAIN the SAME character appearance, face, hairstyle, skin tone, and clothing as the reference image. " : "";
+            return `${prefix}Full body character design of ${name}, concept art. ${baseDesc}. Standing pose, neutral expression, no emotion, looking at viewer. Clean white background, isolated, no other objects, no scenery, simple background, high quality, masterpiece.`;
+        }
+        if (type === "three_view") {
+            const prefix = (hasFullBodyImage || hasAnyUpload) ? "STRICTLY MAINTAIN the SAME character appearance, face, hairstyle, and clothing as the reference image. " : "";
+            return `${prefix}Character Reference Sheet for ${name}. ${baseDesc}. Three-view character design: Front view, Side view, and Back view. Full body, standing pose, neutral expression. Consistent clothing and details across all views. Simple white background, clean lines, studio lighting, high quality.`;
+        }
+        if (type === "headshot") {
+            const prefix = (hasFullBodyImage || hasAnyUpload) ? "STRICTLY MAINTAIN the SAME face, hairstyle, skin tone, and facial features as the reference image. " : "";
+            return `${prefix}Close-up portrait of the SAME character ${name}. ${baseDesc}. Zoom in on face and shoulders, detailed facial features, neutral expression, looking at viewer, high quality, masterpiece.`;
+        }
+        return "";
+    };
+
+    const [fullBodyPrompt, setFullBodyPrompt] = useState(getInitialPrompt("full_body", asset.full_body_prompt));
+    const [threeViewPrompt, setThreeViewPrompt] = useState(getInitialPrompt("three_view", asset.three_view_prompt));
+    const [headshotPrompt, setHeadshotPrompt] = useState(getInitialPrompt("headshot", asset.headshot_prompt));
     const [videoPrompt, setVideoPrompt] = useState(asset.video_prompt || "");
 
     // New State for Style Control
@@ -59,6 +88,19 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
     const [negativePrompt, setNegativePrompt] = useState("low quality, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, jpeg artifacts, signature, watermark, blurry");
     // Art Direction Style expanded state (collapsed by default to save space)
     const [showStyleExpanded, setShowStyleExpanded] = useState(false);
+
+    // Get the uploaded image URL for reverse generation reference
+    const getUploadedReferenceUrl = () => {
+        if (hasUploadedThreeViews) {
+            const uploadedVariant = asset.three_view_asset?.variants?.find((v: any) => v.is_uploaded_source);
+            return uploadedVariant?.url || asset.three_view_image_url;
+        }
+        if (hasUploadedHeadshot) {
+            const uploadedVariant = asset.headshot_asset?.variants?.find((v: any) => v.is_uploaded_source);
+            return uploadedVariant?.url || asset.headshot_image_url;
+        }
+        return null;
+    };
 
     // Motion Ref generation handler with validation
     const handleGenerateMotionRef = async (assetType: 'full_body' | 'head_shot', prompt: string, audioUrl?: string) => {
@@ -178,10 +220,22 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
     // Update local state when asset updates (e.g. after generation)
     useEffect(() => {
         if (asset.full_body_prompt) setFullBodyPrompt(asset.full_body_prompt);
+        else if (hasNonFullBodyUpload && !fullBodyPrompt.includes("STRICTLY MAINTAIN")) {
+            setFullBodyPrompt(getInitialPrompt("full_body", ""));
+        }
+
         if (asset.three_view_prompt) setThreeViewPrompt(asset.three_view_prompt);
+        else if (hasAnyUpload && !threeViewPrompt.includes("STRICTLY MAINTAIN")) {
+            setThreeViewPrompt(getInitialPrompt("three_view", ""));
+        }
+
         if (asset.headshot_prompt) setHeadshotPrompt(asset.headshot_prompt);
+        else if (hasAnyUpload && !headshotPrompt.includes("STRICTLY MAINTAIN")) {
+            setHeadshotPrompt(getInitialPrompt("headshot", ""));
+        }
+
         if (asset.video_prompt) setVideoPrompt(asset.video_prompt);
-    }, [asset]);
+    }, [asset, hasAnyUpload, hasNonFullBodyUpload]);
 
     const handleGenerateClick = (type: "full_body" | "three_view" | "headshot", batchSize: number) => {
         let prompt = "";
@@ -277,6 +331,10 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                         description="The primary reference for character consistency."
                         aspectRatio="9:16"
 
+                        // Reverse generation: Show hint if upload detected but no full body
+                        reverseGenerationMode={hasNonFullBodyUpload && !hasFullBodyImage}
+                        reverseReferenceUrl={getUploadedReferenceUrl()}
+
                         supportsMotion={true}
                         mode={fullBodyMode}
                         onModeChange={setFullBodyMode}
@@ -317,7 +375,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                         onGenerate={(batchSize: number) => handleGenerateClick("three_view", batchSize)}
                         isGenerating={getGeneratingInfo("three_view").isGenerating}
                         generatingBatchSize={getGeneratingInfo("three_view").batchSize}
-                        isLocked={!asset.full_body_image_url}
+                        isLocked={!asset.full_body_image_url && !hasAnyUpload}
                         description="Front, side, and back views for 3D-like consistency."
                         aspectRatio="16:9"
                     />
@@ -344,7 +402,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                         onGenerate={(batchSize: number) => handleGenerateClick("headshot", batchSize)}
                         isGenerating={getGeneratingInfo("headshot").isGenerating}
                         generatingBatchSize={getGeneratingInfo("headshot").batchSize}
-                        isLocked={!asset.full_body_image_url}
+                        isLocked={!asset.full_body_image_url && !hasAnyUpload}
                         description="Close-up facial details and expressions."
                         aspectRatio="1:1"
 
@@ -496,7 +554,10 @@ function WorkbenchPanel({
     isUploadingAudio = false,
     isVideoLoading = false,
     setIsVideoLoading,
-    onResetPrompt
+    onResetPrompt,
+    // Reverse Generation Props
+    reverseGenerationMode = false,
+    reverseReferenceUrl = null
 }: any) {
 
     return (
@@ -556,6 +617,30 @@ function WorkbenchPanel({
                         <div className="text-gray-500 flex flex-col items-center gap-2">
                             <Lock size={32} />
                             <span className="text-sm">Generate Master Asset first</span>
+                        </div>
+                    </div>
+                )}
+
+                {/* Reverse Generation Hint - shown in Full Body panel when upload detected */}
+                {reverseGenerationMode && (
+                    <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent z-10 flex flex-col items-center justify-center text-center p-6 pointer-events-none">
+                        <div className="flex flex-col items-center gap-3 bg-black/60 backdrop-blur-md rounded-xl p-6 border border-primary/30 pointer-events-auto">
+                            <div className="flex items-center gap-2 text-primary">
+                                <RefreshCw size={20} />
+                                <span className="text-sm font-bold">Upload Detected</span>
+                            </div>
+                            <p className="text-xs text-gray-300 max-w-[200px]">
+                                Generate Full Body from your uploaded reference image
+                            </p>
+                            {reverseReferenceUrl && (
+                                <img
+                                    src={typeof reverseReferenceUrl === 'string' && reverseReferenceUrl.startsWith('http')
+                                        ? reverseReferenceUrl
+                                        : `${window.location.origin}/${reverseReferenceUrl}`}
+                                    alt="Reference"
+                                    className="w-16 h-16 rounded-lg object-cover border border-white/20"
+                                />
+                            )}
                         </div>
                     </div>
                 )}

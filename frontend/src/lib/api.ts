@@ -134,6 +134,44 @@ export const api = {
         return response.json();
     },
 
+    /**
+     * Upload an asset image as a new variant.
+     * The uploaded image will be marked as the 'upload source' for reverse generation.
+     */
+    uploadAsset: async (
+        scriptId: string,
+        assetType: string,
+        assetId: string,
+        file: File,
+        uploadType: string,
+        description?: string
+    ) => {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const params = new URLSearchParams({
+            upload_type: uploadType,
+        });
+        if (description) {
+            params.append("description", description);
+        }
+
+        const response = await fetch(
+            `${API_URL}/projects/${scriptId}/assets/${assetType}/${assetId}/upload?${params.toString()}`,
+            {
+                method: "POST",
+                body: formData,
+            }
+        );
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || "Failed to upload asset");
+        }
+
+        return response.json();
+    },
+
     generateAsset: async (scriptId: string, assetId: string, assetType: string, stylePreset: string, stylePrompt?: string, generationType: string = "all", prompt: string = "", applyStyle: boolean = true, negativePrompt: string = "", batchSize: number = 1, modelName?: string) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/assets/generate`, {
             asset_id: assetId,
