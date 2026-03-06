@@ -104,8 +104,9 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
     }, [params.generationMode]);
 
     const handleFrameSelect = (frame: any) => {
-        if (!frame.image_url) return;
-        const url = frame.image_url;
+        // Prefer rendered_image_url (from extracted last frame / uploaded image), fallback to image_url
+        const url = frame.rendered_image_url || frame.image_url;
+        if (!url) return;
 
         // If already selected, deselect
         if (selectedImages.includes(url)) {
@@ -365,8 +366,12 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                     // R2V mode: use the explicitly selected frame
                     frameId = selectedFrameId || undefined;
                 } else {
-                    // I2V mode: find frame by matching image URL
-                    const frame = currentProject?.frames?.find((f: any) => f.image_url === img || `${API_URL}/files/${f.image_url}` === img);
+                    // I2V mode: find frame by matching image URL (check rendered_image_url first, then image_url)
+                    const frame = currentProject?.frames?.find((f: any) =>
+                        (f.rendered_image_url || f.image_url) === img ||
+                        f.image_url === img ||
+                        `${API_URL}/files/${f.image_url}` === img
+                    );
                     frameId = frame ? frame.id : undefined;
                 }
 
@@ -588,14 +593,14 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                                                     <div
                                                         key={frame.id}
                                                         onClick={() => handleFrameSelect(frame)}
-                                                        className={`group relative aspect-video rounded-lg overflow-hidden border cursor-pointer transition-all ${selectedImages.includes(frame.image_url)
+                                                        className={`group relative aspect-video rounded-lg overflow-hidden border cursor-pointer transition-all ${selectedImages.includes(frame.rendered_image_url || frame.image_url)
                                                             ? "border-primary ring-2 ring-primary/50"
                                                             : "border-white/10 hover:border-white/30"
                                                             }`}
                                                     >
-                                                        {frame.image_url ? (
+                                                        {(frame.rendered_image_url || frame.image_url) ? (
                                                             <img
-                                                                src={getAssetUrlWithTimestamp(frame.image_url, frame.updated_at)}
+                                                                src={getAssetUrlWithTimestamp(frame.rendered_image_url || frame.image_url, frame.updated_at)}
                                                                 alt={`Frame ${frame.id}`}
                                                                 className="w-full h-full object-cover"
                                                             />
@@ -628,7 +633,7 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                                                 <div className="flex gap-2 flex-wrap">
                                                     {selectedImages.map((img, idx) => {
                                                         // Find frame to get updated_at for cache busting
-                                                        const frame = currentProject?.frames?.find((f: any) => f.image_url === img);
+                                                        const frame = currentProject?.frames?.find((f: any) => (f.rendered_image_url || f.image_url) === img);
                                                         const timestamp = frame?.updated_at || 0;
                                                         return (
                                                             <div key={idx} className="relative w-24 aspect-video rounded-lg overflow-hidden border border-white/20">

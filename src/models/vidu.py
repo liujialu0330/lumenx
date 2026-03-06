@@ -17,8 +17,8 @@ from .base import VideoGenModel
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.vidu.cn/ent/v2"
-DEFAULT_T2V_MODEL = "viduq2"
-DEFAULT_I2V_MODEL = "viduq2-pro"
+DEFAULT_T2V_MODEL = "viduq3-pro"
+DEFAULT_I2V_MODEL = "viduq3-pro"
 
 
 class ViduModel(VideoGenModel):

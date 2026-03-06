@@ -27,7 +27,7 @@ class KlingModel(VideoGenModel):
         super().__init__(config)
         self.access_key = config.get("access_key") or os.getenv("KLING_ACCESS_KEY", "")
         self.secret_key = config.get("secret_key") or os.getenv("KLING_SECRET_KEY", "")
-        self.model_name = config.get("params", {}).get("model_name", "kling-v2-6")
+        self.model_name = config.get("params", {}).get("model_name", "kling-v3")
 
     def _get_token(self) -> str:
         """Generate a signed JWT token using KLING_ACCESS_KEY / KLING_SECRET_KEY."""

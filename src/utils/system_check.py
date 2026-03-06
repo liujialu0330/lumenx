@@ -13,10 +13,11 @@ logger = logging.getLogger(__name__)
 def get_ffmpeg_path() -> str:
     """
     Get path to ffmpeg binary, preferring bundled version.
-    
+
     For packaged applications (PyInstaller, etc.), this will first look for
-    a bundled ffmpeg in the application directory, then fall back to system PATH.
-    
+    a bundled ffmpeg in the application directory, then fall back to system PATH,
+    then check common installation paths (especially useful on Windows).
+
     Returns:
         Path to ffmpeg executable, or None if not found
     """
@@ -24,7 +25,7 @@ def get_ffmpeg_path() -> str:
     if getattr(sys, 'frozen', False):
         # Running in a bundle
         bundle_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
-        
+
         # Try common bundle locations
         ffmpeg_name = 'ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg'
         possible_paths = [
@@ -32,18 +33,47 @@ def get_ffmpeg_path() -> str:
             os.path.join(bundle_dir, 'ffmpeg', ffmpeg_name),
             os.path.join(bundle_dir, ffmpeg_name),
         ]
-        
+
         for path in possible_paths:
             if os.path.exists(path) and os.access(path, os.X_OK):
                 logger.info(f"Using bundled ffmpeg at: {path}")
                 return path
-    
-    # Fall back to system ffmpeg
+
+    # Fall back to system ffmpeg via PATH
     system_ffmpeg = shutil.which("ffmpeg")
     if system_ffmpeg:
         logger.info(f"Using system ffmpeg at: {system_ffmpeg}")
         return system_ffmpeg
-    
+
+    # On Windows, shutil.which() may fail if PATH wasn't refreshed after install.
+    # Check common Windows installation paths as fallback.
+    if platform.system() == "Windows":
+        common_windows_paths = [
+            os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "ffmpeg", "bin", "ffmpeg.exe"),
+            os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "ffmpeg", "bin", "ffmpeg.exe"),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "ffmpeg", "bin", "ffmpeg.exe"),
+            os.path.join(os.environ.get("USERPROFILE", ""), "ffmpeg", "bin", "ffmpeg.exe"),
+            os.path.join(os.environ.get("USERPROFILE", ""), "Desktop", "ffmpeg", "bin", "ffmpeg.exe"),
+            os.path.join(os.environ.get("USERPROFILE", ""), "Downloads", "ffmpeg", "bin", "ffmpeg.exe"),
+            # Scoop package manager
+            os.path.join(os.environ.get("USERPROFILE", ""), "scoop", "shims", "ffmpeg.exe"),
+            # Chocolatey package manager
+            os.path.join(os.environ.get("ChocolateyInstall", "C:\\ProgramData\\chocolatey"), "bin", "ffmpeg.exe"),
+            # winget / common manual installs
+            "C:\\ffmpeg\\bin\\ffmpeg.exe",
+            "C:\\tools\\ffmpeg\\bin\\ffmpeg.exe",
+        ]
+        for path in common_windows_paths:
+            if path and os.path.isfile(path):
+                logger.info(f"Using ffmpeg found at common Windows path: {path}")
+                return path
+
+        logger.warning(
+            "FFmpeg not found in PATH or common Windows paths. "
+            "If FFmpeg is installed, ensure its 'bin' folder is in the system PATH "
+            "and restart the application."
+        )
+
     return None
 
 

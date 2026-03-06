@@ -1418,6 +1418,8 @@ class ComicGenPipeline:
 
         frame.rendered_image_asset.variants.append(variant)
         frame.rendered_image_asset.selected_id = variant.id
+        # Also update rendered_image_url so VideoCreator can pick it up
+        frame.rendered_image_url = image_url
 
         script.updated_at = time.time()
         self._save_data()
@@ -1455,6 +1457,8 @@ class ComicGenPipeline:
 
         frame.rendered_image_asset.variants.append(variant)
         frame.rendered_image_asset.selected_id = variant.id
+        # Also update rendered_image_url so VideoCreator can pick it up
+        frame.rendered_image_url = image_url
 
         script.updated_at = time.time()
         self._save_data()
@@ -1893,7 +1897,7 @@ class ComicGenPipeline:
                     negative_prompt=task.negative_prompt,
                     aspect_ratio="16:9",
                 )
-            elif model_prefix in ("vidu", "viduq2"):
+            elif model_prefix in ("vidu", "viduq2", "viduq3"):
                 # Use Vidu model
                 from ...models.vidu import ViduModel
                 vidu_model = ViduModel({})
