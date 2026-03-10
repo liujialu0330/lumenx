@@ -1,6 +1,7 @@
 from typing import Dict, Any, List, Optional, Tuple
 import json
 import os
+import re
 import time
 import uuid
 import subprocess
@@ -19,6 +20,31 @@ from ...utils.oss_utils import is_object_key
 from ...utils.system_check import get_ffmpeg_path, get_ffmpeg_install_instructions
 
 logger = get_logger(__name__)
+
+# --- Security helpers ---
+
+# Allowed pattern for IDs used in file paths (UUID hex + hyphens)
+_SAFE_ID_RE = re.compile(r'^[a-zA-Z0-9_\-]+$')
+
+
+def _validate_safe_id(value: str, label: str = "id") -> str:
+    """Ensure a value is safe to embed in file paths / command args (UUID-like)."""
+    if not value or not _SAFE_ID_RE.match(value):
+        raise ValueError(f"Invalid {label}: contains unsafe characters")
+    return value
+
+
+def _safe_resolve_path(base_dir: str, untrusted_rel: str) -> str:
+    """Resolve *untrusted_rel* under *base_dir* and ensure the result stays inside it.
+
+    Prevents path-traversal attacks (e.g. ``../../etc/passwd``).
+    Returns the resolved absolute path; raises ValueError on escape attempts.
+    """
+    base = os.path.realpath(base_dir)
+    resolved = os.path.realpath(os.path.join(base, untrusted_rel))
+    if not resolved.startswith(base + os.sep) and resolved != base:
+        raise ValueError(f"Path escapes base directory: {untrusted_rel}")
+    return resolved
 
 class ComicGenPipeline:
     def __init__(self, config: Dict[str, Any] = None):
@@ -1191,9 +1217,9 @@ class ComicGenPipeline:
                 if is_object_key(url) or url.startswith("http"):
                     ref_image_paths.append(url)
                 else:
-                    potential_path = os.path.join("output", url)
+                    potential_path = _safe_resolve_path("output", url)
                     if os.path.exists(potential_path):
-                        ref_image_paths.append(os.path.abspath(potential_path))
+                        ref_image_paths.append(potential_path)
             
             # Also handle single path if provided (legacy support)
             if ref_image_url and ref_image_url not in ref_image_urls:
@@ -1201,11 +1227,10 @@ class ComicGenPipeline:
                     if ref_image_url not in ref_image_paths:
                         ref_image_paths.append(ref_image_url)
                 else:
-                    potential_path = os.path.join("output", ref_image_url)
+                    potential_path = _safe_resolve_path("output", ref_image_url)
                     if os.path.exists(potential_path):
-                        abs_path = os.path.abspath(potential_path)
-                        if abs_path not in ref_image_paths:
-                            ref_image_paths.append(abs_path)
+                        if potential_path not in ref_image_paths:
+                            ref_image_paths.append(potential_path)
             
             # Use the first path as ref_image_path for legacy generator support if needed
             ref_image_path = ref_image_paths[0] if ref_image_paths else None
@@ -1297,16 +1322,17 @@ class ComicGenPipeline:
             # Resolve source path
             if image_url and not image_url.startswith("http"):
                 # Assume relative to output dir
-                src_path = os.path.join("output", image_url)
+                src_path = _safe_resolve_path("output", image_url)
                 if os.path.exists(src_path) and os.path.isfile(src_path):
                     # Create snapshot dir
                     snapshot_dir = os.path.join("output", "video_inputs")
                     os.makedirs(snapshot_dir, exist_ok=True)
-                    
+
                     # Define snapshot path
-                    ext = os.path.splitext(image_url)[1] or ".png"
+                    ext = os.path.splitext(os.path.basename(image_url))[1] or ".png"
+                    _validate_safe_id(task_id, "task_id")
                     snapshot_filename = f"{task_id}{ext}"
-                    snapshot_path = os.path.join(snapshot_dir, snapshot_filename)
+                    snapshot_path = _safe_resolve_path(snapshot_dir, snapshot_filename)
                     
                     # Copy file
                     import shutil
@@ -1371,7 +1397,7 @@ class ComicGenPipeline:
         # Resolve video path
         video_path = video_task.video_url
         if not video_path.startswith("/") and not video_path.startswith("http"):
-            video_path = os.path.join("output", video_path)
+            video_path = _safe_resolve_path("output", video_path)
 
         if video_path.startswith("http"):
             # Download to temp file first
@@ -1387,8 +1413,9 @@ class ComicGenPipeline:
 
         output_dir = os.path.join("output", "storyboard")
         os.makedirs(output_dir, exist_ok=True)
+        _validate_safe_id(frame_id, "frame_id")
         output_filename = f"frame_{frame_id}_lastframe_{uuid.uuid4().hex[:8]}.jpg"
-        output_path = os.path.join(output_dir, output_filename)
+        output_path = _safe_resolve_path(output_dir, output_filename)
 
         cmd = [
             ffmpeg_path, "-sseof", "-0.1",
@@ -1440,6 +1467,9 @@ class ComicGenPipeline:
         """Upload an image as a variant of the frame's rendered_image_asset."""
         from .models import ImageVariant, ImageAsset
 
+        # Validate that image_path is inside the output directory
+        safe_path = _safe_resolve_path("output", os.path.relpath(image_path, "output") if os.path.isabs(image_path) else image_path)
+
         script = self.get_script(script_id)
         if not script:
             raise ValueError("Script not found")
@@ -1451,8 +1481,8 @@ class ComicGenPipeline:
         # Upload to OSS if configured
         from ...utils.oss_utils import OSSImageUploader
         uploader = OSSImageUploader()
-        oss_url = uploader.upload_image(image_path)
-        image_url = oss_url if oss_url else os.path.relpath(image_path, "output")
+        oss_url = uploader.upload_image(safe_path)
+        image_url = oss_url if oss_url else os.path.relpath(safe_path, "output")
 
         # Create new variant
         variant = ImageVariant(
@@ -1482,12 +1512,9 @@ class ComicGenPipeline:
         
         # If it's a local file path (relative to output)
         if not url.startswith("http"):
-            local_path = os.path.join("output", url)
+            local_path = _safe_resolve_path("output", url)
             if os.path.exists(local_path):
                 return local_path
-            # Try absolute path if it exists
-            if os.path.exists(url):
-                return url
                 
         # Download from URL
         try:
@@ -1528,6 +1555,7 @@ class ComicGenPipeline:
 
     def merge_videos(self, script_id: str) -> Script:
         """Step 5b: Merge selected videos into a single file."""
+        _validate_safe_id(script_id, "script_id")
         script = self.scripts.get(script_id)
         if not script:
             raise ValueError("Script not found")
@@ -1592,14 +1620,14 @@ class ComicGenPipeline:
         logger.info(f"[MERGE] Found {len(video_paths)} videos to merge")
             
         # Create file list for ffmpeg
-        list_path = os.path.join("output", f"merge_list_{script_id}.txt")
+        list_path = _safe_resolve_path("output", f"merge_list_{script_id}.txt")
         abs_video_paths = []
-        
+
         with open(list_path, "w") as f:
             for path in video_paths:
                 # Resolve to absolute path
                 if not path.startswith("http"):
-                    abs_path = os.path.abspath(os.path.join("output", path))
+                    abs_path = _safe_resolve_path("output", path)
                     if os.path.exists(abs_path):
                         f.write(f"file '{abs_path}'\n")
                         abs_video_paths.append(abs_path)
@@ -1615,7 +1643,7 @@ class ComicGenPipeline:
 
         # Output path
         output_filename = f"merged_{script_id}_{int(time.time())}.mp4"
-        output_path = os.path.join("output", "video", output_filename)
+        output_path = _safe_resolve_path(os.path.join("output", "video"), output_filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
         logger.debug(f"[MERGE] Output path: {output_path}")
