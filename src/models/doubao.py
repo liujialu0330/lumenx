@@ -17,7 +17,7 @@ class DoubaoModel(VideoGenModel):
     def __init__(self, config: dict):
         super().__init__(config)
         self.api_key = os.getenv("ARK_API_KEY")
-        self.model_name = config.get('params', {}).get('model_name', 'doubao-seedance-1-0-pro-fast-251015')
+        self.model_name = config.get('params', {}).get('model_name', 'doubao-seedance-1-5-pro-251215')
         
         if not self.api_key:
             logger.warning("ARK_API_KEY not found in environment variables.")
