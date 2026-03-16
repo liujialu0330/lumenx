@@ -446,11 +446,11 @@ class WanxImageModel(ImageGenModel):
 
     def _download_image(self, url: str, output_path: str):
         logger.info(f"Downloading image to {output_path}...")
-        
+
         # Setup retry strategy
         from requests.adapters import HTTPAdapter
         from requests.packages.urllib3.util.retry import Retry
-        
+
         retry_strategy = Retry(
             total=5,
             backoff_factor=1,
@@ -466,20 +466,134 @@ class WanxImageModel(ImageGenModel):
         try:
             response = http.get(url, stream=True, timeout=60, verify=False) # verify=False to avoid some SSL issues
             response.raise_for_status()
-            
+
             # Ensure directory exists
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            
+
             with open(temp_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
-            
+
             # Atomic rename
             os.rename(temp_path, output_path)
             logger.info("Download complete.")
-            
+
         except Exception as e:
             logger.error(f"Failed to download image: {e}")
             if os.path.exists(temp_path):
                 os.remove(temp_path)
             raise
+
+
+class DoubaoImageModel(ImageGenModel):
+    """Image generation using Volcengine ARK (Doubao SeeDream)."""
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.params = config.get('params', {})
+
+    @property
+    def api_key(self):
+        api_key = os.getenv("ARK_API_KEY")
+        if not api_key:
+            logger.warning("ARK_API_KEY not found in environment variables.")
+        return api_key
+
+    def generate(self, prompt: str, output_path: str, ref_image_path: str = None, ref_image_paths: list = None, model_name: str = None, **kwargs) -> Tuple[str, float]:
+        try:
+            from volcenginesdkarkruntime import Ark
+        except ImportError:
+            raise RuntimeError("volcenginesdkarkruntime not installed. Run: pip install volcenginesdkarkruntime")
+
+        final_model_name = model_name or self.params.get('model_name', 'doubao-seedream-5-0-260128')
+        size = kwargs.pop('size', self.params.get('size', '1280*1280'))
+
+        logger.info(f"Doubao SeeDream generation: model={final_model_name}, prompt={prompt[:100]}")
+
+        client = Ark(
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            api_key=self.api_key
+        )
+
+        # Build content list
+        content = [{"type": "text", "text": f"{prompt} --size {size}"}]
+
+        # Handle reference image
+        all_ref_paths = []
+        if ref_image_path:
+            all_ref_paths.append(ref_image_path)
+        if ref_image_paths:
+            all_ref_paths.extend(ref_image_paths)
+
+        for path in all_ref_paths:
+            if os.path.exists(path):
+                import base64
+                with open(path, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode('utf-8')
+                ext = os.path.splitext(path)[1].lower()
+                mime = "image/png" if ext == ".png" else "image/jpeg"
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{b64}"}
+                })
+            elif path.startswith("http"):
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": path}
+                })
+
+        api_start = time.time()
+
+        try:
+            create_result = client.content_generation.tasks.create(
+                model=final_model_name,
+                content=content
+            )
+            task_id = create_result.id
+            logger.info(f"Doubao image task created: {task_id}")
+
+            # Poll for completion
+            max_wait = 600
+            elapsed = 0
+            poll_interval = 5
+            while elapsed < max_wait:
+                time.sleep(poll_interval)
+                elapsed += poll_interval
+                result = client.content_generation.tasks.get(task_id=task_id)
+                status = result.status
+
+                logger.info(f"Doubao image task {task_id} status: {status} ({elapsed}s)")
+
+                if status == "succeeded":
+                    image_url = None
+                    if hasattr(result, 'content') and result.content:
+                        if hasattr(result.content, 'image_url'):
+                            image_url = result.content.image_url
+                        elif hasattr(result.content, 'image_url_list') and result.content.image_url_list:
+                            image_url = result.content.image_url_list[0]
+                    if not image_url:
+                        raise RuntimeError(f"No image URL in response: {result}")
+
+                    self._download_image(image_url, output_path)
+                    api_duration = time.time() - api_start
+                    return output_path, api_duration
+
+                elif status == "failed":
+                    error = getattr(result, 'error', 'Unknown error')
+                    raise RuntimeError(f"Doubao image generation failed: {error}")
+
+            raise RuntimeError(f"Doubao image task timed out after {max_wait}s")
+
+        except Exception as e:
+            logger.error(f"Doubao image generation error: {e}")
+            raise
+
+    def _download_image(self, url: str, output_path: str):
+        logger.info(f"Downloading image to {output_path}...")
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        response = requests.get(url, stream=True, timeout=60)
+        response.raise_for_status()
+        with open(output_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        logger.info("Download complete.")
