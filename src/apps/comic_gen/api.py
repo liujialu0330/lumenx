@@ -263,9 +263,14 @@ class EnvConfig(BaseModel):
     OSS_BUCKET_NAME: Optional[str] = None
     OSS_ENDPOINT: Optional[str] = None
     OSS_BASE_PATH: Optional[str] = None
+    ARK_API_KEY: Optional[str] = None
     KLING_ACCESS_KEY: Optional[str] = None
     KLING_SECRET_KEY: Optional[str] = None
     VIDU_API_KEY: Optional[str] = None
+    VOLC_TTS_APPID: Optional[str] = None
+    VOLC_TTS_TOKEN: Optional[str] = None
+    LLM_PROVIDER: Optional[str] = None
+    TTS_PROVIDER: Optional[str] = None
     endpoint_overrides: Dict[str, str] = {}
 
 
@@ -1048,6 +1053,7 @@ async def toggle_variant_favorite(script_id: str, request: FavoriteVariantReques
         raise HTTPException(status_code=500, detail=str(e))
 
 class UpdateModelSettingsRequest(BaseModel):
+    llm_model: Optional[str] = None
     t2i_model: Optional[str] = None
     i2i_model: Optional[str] = None
     i2v_model: Optional[str] = None
@@ -1068,7 +1074,8 @@ async def update_model_settings(script_id: str, request: UpdateModelSettingsRequ
             request.character_aspect_ratio,
             request.scene_aspect_ratio,
             request.prop_aspect_ratio,
-            request.storyboard_aspect_ratio
+            request.storyboard_aspect_ratio,
+            request.llm_model,
         )
         return signed_response(updated_script)
     except ValueError as e:
@@ -1504,9 +1511,14 @@ async def get_env_config():
             "OSS_BUCKET_NAME": os.getenv("OSS_BUCKET_NAME", ""),
             "OSS_ENDPOINT": os.getenv("OSS_ENDPOINT", ""),
             "OSS_BASE_PATH": os.getenv("OSS_BASE_PATH", ""),
+            "ARK_API_KEY": os.getenv("ARK_API_KEY", ""),
             "KLING_ACCESS_KEY": os.getenv("KLING_ACCESS_KEY", ""),
             "KLING_SECRET_KEY": os.getenv("KLING_SECRET_KEY", ""),
             "VIDU_API_KEY": os.getenv("VIDU_API_KEY", ""),
+            "VOLC_TTS_APPID": os.getenv("VOLC_TTS_APPID", ""),
+            "VOLC_TTS_TOKEN": os.getenv("VOLC_TTS_TOKEN", ""),
+            "LLM_PROVIDER": os.getenv("LLM_PROVIDER", ""),
+            "TTS_PROVIDER": os.getenv("TTS_PROVIDER", ""),
             "endpoint_overrides": endpoint_overrides,
         }
     except Exception as e:

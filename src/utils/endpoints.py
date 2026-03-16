@@ -3,6 +3,7 @@ import os
 # Provider endpoint registry: {provider_key: default_base_url}
 PROVIDER_DEFAULTS = {
     "DASHSCOPE": "https://dashscope.aliyuncs.com",
+    "ARK": "https://ark.cn-beijing.volces.com/api/v3",
     "KLING": "https://api-beijing.klingai.com/v1",
     "VIDU": "https://api.vidu.cn/ent/v2",
 }
