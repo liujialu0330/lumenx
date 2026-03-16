@@ -67,6 +67,12 @@ class ComicGenPipeline:
         # Cached model instances for Kling/Vidu (lazily initialized)
         self._kling_model = None
         self._vidu_model = None
+        self._doubao_model = None
+
+    def _apply_llm_model(self, script: 'Script'):
+        """Set LLM model override based on the project's model_settings."""
+        llm_model = getattr(script.model_settings, 'llm_model', None)
+        self.script_processor.llm._model_override = llm_model
 
     # ... (existing methods)
 
@@ -121,6 +127,7 @@ class ComicGenPipeline:
             raise ValueError("Script not found")
         
         # Parse the new text (this generates new entities with new IDs)
+        self._apply_llm_model(existing_script)
         new_script = self.script_processor.parse_novel(existing_script.title, text)
         
         # Preserve the original script ID and timestamps
@@ -800,6 +807,7 @@ class ComicGenPipeline:
         }
         
         # Call LLM to analyze text (may raise RuntimeError on parse failure)
+        self._apply_llm_model(script)
         raw_frames = self.script_processor.analyze_to_storyboard(text, entities_json)
 
         if not raw_frames:
@@ -879,6 +887,7 @@ class ComicGenPipeline:
         logger.debug(f"Refining prompt for frame {frame_id}")
         
         # Call LLM to refine prompt
+        self._apply_llm_model(script)
         result = self.script_processor.polish_storyboard_prompt(raw_prompt, assets)
         
         # Find and update the frame
@@ -1958,6 +1967,16 @@ class ComicGenPipeline:
                     audio=task.vidu_audio if task.vidu_audio is not None else True,
                     movement_amplitude=task.movement_amplitude or "auto",
                 )
+            elif model_prefix == "doubao":
+                # Use Doubao model (cached)
+                if self._doubao_model is None:
+                    from ...models.doubao import DoubaoModel
+                    self._doubao_model = DoubaoModel({})
+                video_path, _ = self._doubao_model.generate(
+                    prompt=task.prompt,
+                    output_path=output_path,
+                    img_url=img_url,
+                )
             else:
                 # Default: Wanx model
                 video_path, _ = self.video_generator.model.generate(
@@ -2398,12 +2417,14 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
-    def update_model_settings(self, script_id: str, t2i_model: str = None, i2i_model: str = None, i2v_model: str = None, character_aspect_ratio: str = None, scene_aspect_ratio: str = None, prop_aspect_ratio: str = None, storyboard_aspect_ratio: str = None) -> Script:
+    def update_model_settings(self, script_id: str, t2i_model: str = None, i2i_model: str = None, i2v_model: str = None, character_aspect_ratio: str = None, scene_aspect_ratio: str = None, prop_aspect_ratio: str = None, storyboard_aspect_ratio: str = None, llm_model: str = None) -> Script:
         """Updates the model settings for a script."""
         script = self.scripts.get(script_id)
         if not script:
             raise ValueError("Script not found")
-        
+
+        if llm_model:
+            script.model_settings.llm_model = llm_model
         if t2i_model:
             script.model_settings.t2i_model = t2i_model
         if i2i_model:

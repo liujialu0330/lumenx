@@ -297,7 +297,8 @@ export const api = {
         characterAspectRatio?: string,
         sceneAspectRatio?: string,
         propAspectRatio?: string,
-        storyboardAspectRatio?: string
+        storyboardAspectRatio?: string,
+        llmModel?: string
     ) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/model_settings`, {
             t2i_model: t2iModel,
@@ -306,7 +307,8 @@ export const api = {
             character_aspect_ratio: characterAspectRatio,
             scene_aspect_ratio: sceneAspectRatio,
             prop_aspect_ratio: propAspectRatio,
-            storyboard_aspect_ratio: storyboardAspectRatio
+            storyboard_aspect_ratio: storyboardAspectRatio,
+            llm_model: llmModel,
         });
         return res.data;
     },

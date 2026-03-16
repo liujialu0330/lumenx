@@ -228,6 +228,7 @@ class StoryboardFrame(BaseModel):
 
 class ModelSettings(BaseModel):
     """Model selection settings for different generation stages"""
+    llm_model: Optional[str] = Field(None, description="LLM model for script analysis (None = provider default)")
     t2i_model: str = Field("wan2.6-t2i", description="Text-to-Image model for Assets")
     i2i_model: str = Field("wan2.6-image", description="Image-to-Image model for Storyboard")
     i2v_model: str = Field("wan2.6-i2v", description="Image-to-Video model for Motion")
