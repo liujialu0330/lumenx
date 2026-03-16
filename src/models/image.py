@@ -503,10 +503,14 @@ class DoubaoImageModel(ImageGenModel):
         try:
             from volcenginesdkarkruntime import Ark
         except ImportError:
-            raise RuntimeError("volcenginesdkarkruntime not installed. Run: pip install volcenginesdkarkruntime")
+            raise RuntimeError("volcenginesdkarkruntime not installed. Run: pip install 'volcengine-python-sdk[ark]'")
 
-        final_model_name = model_name or self.params.get('model_name', 'doubao-seedream-5-0-260128')
-        size = kwargs.pop('size', self.params.get('size', '1280*1280'))
+        # Ignore non-doubao model names (e.g. "wan2.6-t2i" passed during auto-fallback)
+        if model_name and model_name.startswith("doubao-"):
+            final_model_name = model_name
+        else:
+            final_model_name = self.params.get('model_name', 'doubao-seedream-5-0-260128')
+        size = kwargs.pop('size', self.params.get('size', '1024*1024'))
 
         logger.info(f"Doubao SeeDream generation: model={final_model_name}, prompt={prompt[:100]}")
 
@@ -515,10 +519,8 @@ class DoubaoImageModel(ImageGenModel):
             api_key=self.api_key
         )
 
-        # Build content list
-        content = [{"type": "text", "text": f"{prompt} --size {size}"}]
-
-        # Handle reference image
+        # Collect reference images as base64 data URLs
+        ref_images = []
         all_ref_paths = []
         if ref_image_path:
             all_ref_paths.append(ref_image_path)
@@ -532,57 +534,38 @@ class DoubaoImageModel(ImageGenModel):
                     b64 = base64.b64encode(f.read()).decode('utf-8')
                 ext = os.path.splitext(path)[1].lower()
                 mime = "image/png" if ext == ".png" else "image/jpeg"
-                content.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:{mime};base64,{b64}"}
-                })
+                ref_images.append(f"data:{mime};base64,{b64}")
             elif path.startswith("http"):
-                content.append({
-                    "type": "image_url",
-                    "image_url": {"url": path}
-                })
+                ref_images.append(path)
 
         api_start = time.time()
 
         try:
-            create_result = client.content_generation.tasks.create(
-                model=final_model_name,
-                content=content
-            )
-            task_id = create_result.id
-            logger.info(f"Doubao image task created: {task_id}")
+            gen_kwargs = {
+                "model": final_model_name,
+                "prompt": prompt,
+                "size": size,
+                "response_format": "url",
+                "sequential_image_generation": "disabled",
+                "watermark": False,
+            }
+            if ref_images:
+                gen_kwargs["image"] = ref_images
 
-            # Poll for completion
-            max_wait = 600
-            elapsed = 0
-            poll_interval = 5
-            while elapsed < max_wait:
-                time.sleep(poll_interval)
-                elapsed += poll_interval
-                result = client.content_generation.tasks.get(task_id=task_id)
-                status = result.status
+            logger.info(f"Calling images.generate: model={final_model_name}, size={size}, refs={len(ref_images)}")
+            response = client.images.generate(**gen_kwargs)
 
-                logger.info(f"Doubao image task {task_id} status: {status} ({elapsed}s)")
+            if not response.data or len(response.data) == 0:
+                raise RuntimeError(f"No image data in response: {response}")
 
-                if status == "succeeded":
-                    image_url = None
-                    if hasattr(result, 'content') and result.content:
-                        if hasattr(result.content, 'image_url'):
-                            image_url = result.content.image_url
-                        elif hasattr(result.content, 'image_url_list') and result.content.image_url_list:
-                            image_url = result.content.image_url_list[0]
-                    if not image_url:
-                        raise RuntimeError(f"No image URL in response: {result}")
+            image_url = response.data[0].url
+            if not image_url:
+                raise RuntimeError(f"No image URL in response data: {response.data[0]}")
 
-                    self._download_image(image_url, output_path)
-                    api_duration = time.time() - api_start
-                    return output_path, api_duration
-
-                elif status == "failed":
-                    error = getattr(result, 'error', 'Unknown error')
-                    raise RuntimeError(f"Doubao image generation failed: {error}")
-
-            raise RuntimeError(f"Doubao image task timed out after {max_wait}s")
+            logger.info(f"Doubao image generated: {image_url[:80]}...")
+            self._download_image(image_url, output_path)
+            api_duration = time.time() - api_start
+            return output_path, api_duration
 
         except Exception as e:
             logger.error(f"Doubao image generation error: {e}")

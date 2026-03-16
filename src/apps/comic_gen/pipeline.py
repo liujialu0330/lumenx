@@ -1977,6 +1977,16 @@ class ComicGenPipeline:
                     output_path=output_path,
                     img_url=img_url,
                 )
+            elif not os.getenv("DASHSCOPE_API_KEY") and os.getenv("ARK_API_KEY"):
+                # Fallback: no DashScope key but ARK available, use Doubao
+                if self._doubao_model is None:
+                    from ...models.doubao import DoubaoModel
+                    self._doubao_model = DoubaoModel({})
+                video_path, _ = self._doubao_model.generate(
+                    prompt=task.prompt,
+                    output_path=output_path,
+                    img_url=img_url,
+                )
             else:
                 # Default: Wanx model
                 video_path, _ = self.video_generator.model.generate(

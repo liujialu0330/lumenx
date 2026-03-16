@@ -16,8 +16,19 @@ class StoryboardGenerator:
         self.output_dir = self.config.get('output_dir', 'output/storyboard')
 
     def _get_model(self, model_name: str = None):
-        """Return appropriate image model based on model_name."""
+        """Return appropriate image model based on model_name.
+
+        Auto-fallback: when DASHSCOPE_API_KEY is absent but ARK_API_KEY is
+        available, route to DoubaoImageModel even if the requested model name
+        is a Wanx model (avoids 401 errors for users who only configured ARK).
+        """
+        use_doubao = False
         if model_name and model_name.startswith("doubao-seedream"):
+            use_doubao = True
+        elif not os.getenv("DASHSCOPE_API_KEY") and os.getenv("ARK_API_KEY"):
+            use_doubao = True
+
+        if use_doubao:
             if self._doubao_model is None:
                 self._doubao_model = DoubaoImageModel(self.config.get('model', {}))
             return self._doubao_model
