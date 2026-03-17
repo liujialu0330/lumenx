@@ -197,7 +197,7 @@ class StoryboardFrame(BaseModel):
     
     # === Camera Parameters ===
     shot_size: Optional[str] = Field(None, description="Shot size: 特写/近景/中景/全景/远景")
-    camera_angle: str = Field("Medium Shot", description="Camera angle/shot type (Legacy)")
+    camera_angle: str = Field("平视", description="Camera angle: 平视/俯视/仰视/侧面/过肩")
     camera_movement: Optional[str] = Field(None, description="Camera movement")
     composition: Optional[str] = Field(None, description="Visual composition guide")
     atmosphere: Optional[str] = Field(None, description="Mood of this specific shot (Legacy, use visual_atmosphere)")

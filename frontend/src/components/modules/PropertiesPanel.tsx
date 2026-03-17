@@ -640,17 +640,19 @@ function StoryboardInspector() {
                 <label className="text-xs font-bold text-gray-500 uppercase">Camera</label>
                 <div className="grid grid-cols-1 gap-2">
                     <select
-                        className="bg-black/20 border border-white/10 rounded p-2 text-xs text-gray-300 focus:outline-none"
+                        className="bg-black/20 border border-white/10 rounded p-2 text-xs text-gray-300 focus:outline-none [&>option]:bg-neutral-800 [&>option]:text-gray-200"
                         value={selectedFrame.camera_angle || ""}
                         onChange={(e) => updateFrame({ camera_angle: e.target.value })}
                     >
-                        <option value="">Angle...</option>
-                        <option value="Wide Shot">Wide Shot</option>
-                        <option value="Medium Shot">Medium Shot</option>
-                        <option value="Close Up">Close Up</option>
-                        <option value="Low Angle">Low Angle</option>
-                        <option value="High Angle">High Angle</option>
-                        <option value="Over the Shoulder">Over the Shoulder</option>
+                        <option value="">角度...</option>
+                        <option value="平视">平视</option>
+                        <option value="俯视">俯视</option>
+                        <option value="仰视">仰视</option>
+                        <option value="侧面">侧面</option>
+                        <option value="过肩">过肩</option>
+                        {selectedFrame.camera_angle && !["平视","俯视","仰视","侧面","过肩"].includes(selectedFrame.camera_angle) && (
+                            <option value={selectedFrame.camera_angle}>{selectedFrame.camera_angle}</option>
+                        )}
                     </select>
                 </div>
             </div>
