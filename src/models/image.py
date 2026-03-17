@@ -510,9 +510,26 @@ class DoubaoImageModel(ImageGenModel):
             final_model_name = model_name
         else:
             final_model_name = self.params.get('model_name', 'doubao-seedream-5-0-260128')
-        size = kwargs.pop('size', self.params.get('size', '1024*1024'))
+        size = kwargs.pop('size', self.params.get('size', '1024x1024'))
 
-        logger.info(f"Doubao SeeDream generation: model={final_model_name}, prompt={prompt[:100]}")
+        # Doubao API 要求 size 格式为 'WIDTHxHEIGHT'
+        size = size.replace('*', 'x')
+
+        # Doubao SeeDream 最低像素要求 3686400，不足时等比例放大
+        DOUBAO_MIN_PIXELS = 3686400
+        try:
+            w, h = map(int, size.split('x'))
+            pixels = w * h
+            if pixels < DOUBAO_MIN_PIXELS:
+                import math
+                scale = math.ceil(math.sqrt(DOUBAO_MIN_PIXELS / pixels))
+                w, h = w * scale, h * scale
+                logger.info(f"Size {size} below Doubao minimum, scaled to {w}x{h}")
+                size = f"{w}x{h}"
+        except (ValueError, ZeroDivisionError):
+            pass
+
+        logger.info(f"Doubao SeeDream generation: model={final_model_name}, size={size}, prompt={prompt[:100]}")
 
         client = Ark(
             base_url="https://ark.cn-beijing.volces.com/api/v3",
