@@ -308,13 +308,8 @@ function StoryboardInspector() {
         // 1. Motion / Action (Subject + Action)
         let motionPart = "";
         if (characters && characters.length > 0) {
-            const charDescriptions = characters.map((c: any) => {
-                let desc = `${c.name} (${c.description}`;
-                if (c.clothing) desc += `, wearing ${c.clothing}`;
-                desc += `)`;
-                return desc;
-            }).join(", ");
-            motionPart += `Characters: ${charDescriptions}. `;
+            const charNames = characters.map((c: any) => c.name).join(", ");
+            motionPart += `Characters: ${charNames}. `;
         }
         motionPart += `${selectedFrame.action_description || ""}`;
         if (selectedFrame.facial_expression) motionPart += `, ${selectedFrame.facial_expression}`;
@@ -336,7 +331,7 @@ function StoryboardInspector() {
         // 3. Scene / Context (Environment + Atmosphere)
         let scenePart = "";
         if (scene) {
-            scenePart += `${scene.description || scene.name}`;
+            scenePart += scene.name;
             if (scene.time_of_day) scenePart += `, ${scene.time_of_day}`;
             if (scene.lighting_mood) scenePart += `, ${scene.lighting_mood}`;
         }

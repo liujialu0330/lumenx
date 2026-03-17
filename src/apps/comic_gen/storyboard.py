@@ -144,11 +144,11 @@ class StoryboardGenerator:
                         elif os.path.exists(scene_url):
                             asset_ref_paths.append(os.path.abspath(scene_url))
         
-        # Collect character descriptions for prompt building
+        # Collect character names for prompt building (visual consistency via ref images, not text)
         for char_id in frame.character_ids:
             char = next((c for c in characters if c.id == char_id), None)
             if char:
-                char_descriptions.append(f"{char.name} ({char.description})")
+                char_descriptions.append(char.name)
         
         char_text = ", ".join(char_descriptions)
 
