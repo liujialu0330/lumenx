@@ -25,6 +25,32 @@ export default function ConsistencyVault() {
     const addGeneratingTask = useProjectStore((state) => state.addGeneratingTask);
     const removeGeneratingTask = useProjectStore((state) => state.removeGeneratingTask);
 
+    // 组件挂载时，清理已完成/失败的残留任务
+    useEffect(() => {
+        if (!currentProject || !generatingTasks || generatingTasks.length === 0) return;
+
+        const allAssets = [
+            ...(currentProject.characters || []),
+            ...(currentProject.scenes || []),
+            ...(currentProject.props || []),
+        ];
+
+        const staleTasks = generatingTasks.filter((task: any) => {
+            const asset = allAssets.find((a: any) => a.id === task.assetId);
+            return !asset || asset.status !== "processing";
+        });
+
+        if (staleTasks.length > 0) {
+            api.getProject(currentProject.id).then((updatedProject) => {
+                updateProject(currentProject.id, updatedProject);
+            }).catch(console.error);
+
+            staleTasks.forEach((task: any) => {
+                removeGeneratingTask(task.assetId, task.generationType);
+            });
+        }
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
     // Store ID and Type instead of full object to ensure reactivity
     const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
     const [selectedAssetType, setSelectedAssetType] = useState<string | null>(null);
