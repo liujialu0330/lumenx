@@ -2,14 +2,16 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Check, ChevronRight, Loader2, Film, AlertTriangle, Layout, Clock, FileText, Download } from "lucide-react";
+import { Play, Check, ChevronRight, Loader2, Film, AlertTriangle, Layout, Clock, FileText, Download, ExternalLink } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL } from "@/lib/api";
 import { getAssetUrl, extractErrorDetail } from "@/lib/utils";
+import { useSystemStatus } from "@/components/project/SystemStatusProvider";
 
 export default function VideoAssembly() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
+    const { checked: sysChecked, ffmpegAvailable } = useSystemStatus();
 
     const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
     const [isMerging, setIsMerging] = useState(false);
@@ -58,9 +60,6 @@ export default function VideoAssembly() {
             const errorDetail = extractErrorDetail(error, "Unknown error occurred during video merge");
 
             setMergeError(errorDetail);
-
-            // Also show alert for immediate feedback
-            alert(`Failed to merge videos:\n\n${errorDetail}`);
         } finally {
             setIsMerging(false);
         }
@@ -119,6 +118,27 @@ export default function VideoAssembly() {
                             /{currentProject?.frames?.length} frames ready
                         </div>
                     </div>
+
+                    {/* FFmpeg Missing Warning */}
+                    {sysChecked && !ffmpegAvailable && (
+                        <div className="mx-6 mt-4 bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3 flex items-start gap-3">
+                            <AlertTriangle size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                            <div className="flex-1 text-sm">
+                                <span className="text-amber-400 font-medium">FFmpeg 未安装</span>
+                                <p className="text-amber-400/70 text-xs mt-1">
+                                    视频合并功能需要 FFmpeg。请下载安装后重启应用。
+                                </p>
+                                <a
+                                    href="https://www.gyan.dev/ffmpeg/builds/"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-xs text-amber-300 hover:text-amber-200 underline mt-1"
+                                >
+                                    下载 FFmpeg (Windows) <ExternalLink size={12} />
+                                </a>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Vertical List */}
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4">
@@ -220,8 +240,9 @@ export default function VideoAssembly() {
                     <div className="h-20 border-t border-white/10 bg-black/40 backdrop-blur flex items-center justify-end px-8">
                         <button
                             onClick={handleMerge}
-                            disabled={isMerging}
+                            disabled={isMerging || (sysChecked && !ffmpegAvailable)}
                             className="bg-primary hover:bg-primary/90 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-primary/20"
+                            title={sysChecked && !ffmpegAvailable ? "请先安装 FFmpeg" : undefined}
                         >
                             {isMerging ? <Loader2 className="animate-spin" /> : <Film />}
                             Merge & Proceed
