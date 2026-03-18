@@ -2186,6 +2186,54 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
+    def delete_video_task(self, script_id: str, video_task_id: str) -> Script:
+        """Deletes a video task from the project."""
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+
+        if not script.video_tasks:
+            raise ValueError("Video task not found")
+
+        task = next((t for t in script.video_tasks if t.id == video_task_id), None)
+        if not task:
+            raise ValueError("Video task not found")
+
+        if task.status == "processing":
+            raise ValueError("Cannot delete a task that is currently processing")
+
+        # Clear frame references
+        for frame in script.frames:
+            if frame.selected_video_id == video_task_id:
+                frame.selected_video_id = ""
+                frame.video_url = ""
+
+        # Remove from list
+        script.video_tasks = [t for t in script.video_tasks if t.id != video_task_id]
+
+        # Delete output video file
+        try:
+            if task.video_url:
+                video_path = os.path.join("output", task.video_url)
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+                    logger.info(f"Deleted video file: {video_path}")
+        except Exception as e:
+            logger.warning(f"Failed to delete video file: {e}")
+
+        # Delete input image snapshot
+        try:
+            if task.image_url and not is_object_key(task.image_url):
+                image_path = os.path.join("output", task.image_url)
+                if os.path.exists(image_path):
+                    os.remove(image_path)
+                    logger.info(f"Deleted input snapshot: {image_path}")
+        except Exception as e:
+            logger.warning(f"Failed to delete input snapshot: {e}")
+
+        self._save_data()
+        return script
+
     def generate_audio(self, script_id: str) -> Script:
         """Step 5: Generate audio (Dialogue & SFX)."""
         script = self.scripts.get(script_id)

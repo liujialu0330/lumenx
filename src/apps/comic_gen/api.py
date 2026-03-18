@@ -887,6 +887,18 @@ async def delete_asset_video(script_id: str, asset_type: str, asset_id: str, vid
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.delete("/projects/{script_id}/video_tasks/{video_task_id}", response_model=Script)
+async def delete_video_task(script_id: str, video_task_id: str):
+    """Deletes a video task from the project."""
+    try:
+        updated_script = pipeline.delete_video_task(script_id, video_task_id)
+        return signed_response(updated_script)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 
 class ToggleLockRequest(BaseModel):
     asset_id: str

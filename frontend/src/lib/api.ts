@@ -242,6 +242,11 @@ export const api = {
         return res.data;
     },
 
+    deleteVideoTask: async (scriptId: string, videoTaskId: string) => {
+        const res = await axios.delete(`${API_URL}/projects/${scriptId}/video_tasks/${videoTaskId}`);
+        return res.data;
+    },
+
     toggleAssetLock: async (scriptId: string, assetId: string, assetType: string) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/assets/toggle_lock`, {
             asset_id: assetId,
