@@ -43,20 +43,32 @@ class DoubaoModel(VideoGenModel):
             raise RuntimeError("Ark client not initialized. Please install volcenginesdkarkruntime.")
 
         img_url = kwargs.get('img_url')
-        if not img_url:
-            raise ValueError("Doubao SeeDance model requires an input image (img_url).")
+        img_path = kwargs.get('img_path')
+        if not img_url and not img_path:
+            raise ValueError("Doubao SeeDance model requires an input image (img_url or img_path).")
 
-        # Handle file:// prefix
-        if img_url.startswith("file://"):
-            local_path = img_url[7:]
-            # Convert local file to base64 data URL
+        final_image_url = None
+
+        # 优先使用已下载的本地文件路径
+        local_path = img_path
+        if not local_path and img_url:
+            if img_url.startswith("file://"):
+                local_path = img_url[7:]
+            elif not img_url.startswith(("http://", "https://", "data:")):
+                # 相对路径，拼接 output 目录
+                resolved = os.path.join("output", img_url)
+                if os.path.exists(resolved):
+                    local_path = resolved
+
+        if local_path and os.path.exists(local_path):
             base64_image = self._encode_image_to_base64(local_path)
-            # Guess mime type based on extension
             ext = os.path.splitext(local_path)[1].lower()
             mime_type = "image/png" if ext == ".png" else "image/jpeg"
             final_image_url = f"data:{mime_type};base64,{base64_image}"
-        else:
+        elif img_url and img_url.startswith(("http://", "https://", "data:")):
             final_image_url = img_url
+        else:
+            raise ValueError(f"Cannot resolve image: img_url={img_url}, img_path={img_path}")
 
         logger.info(f"Calling Doubao {self.model_name} with prompt: {prompt}")
         start_time = time.time()

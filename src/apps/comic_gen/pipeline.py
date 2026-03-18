@@ -1976,6 +1976,7 @@ class ComicGenPipeline:
                     prompt=task.prompt,
                     output_path=output_path,
                     img_url=img_url,
+                    img_path=img_path,
                 )
             elif not os.getenv("DASHSCOPE_API_KEY") and os.getenv("ARK_API_KEY"):
                 # Fallback: no DashScope key but ARK available, use Doubao
@@ -1986,6 +1987,7 @@ class ComicGenPipeline:
                     prompt=task.prompt,
                     output_path=output_path,
                     img_url=img_url,
+                    img_path=img_path,
                 )
             else:
                 # Default: Wanx model
