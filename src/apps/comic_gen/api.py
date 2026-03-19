@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -1366,11 +1366,32 @@ async def upload_frame_image(script_id: str, frame_id: str, file: UploadFile = F
 
 
 @app.post("/projects/{script_id}/merge", response_model=Script)
-async def merge_videos(script_id: str):
+async def merge_videos(
+    script_id: str,
+    audio_mode: str = Form("keep"),
+    bgm_volume: float = Form(0.5),
+    bgm_file: UploadFile = File(None),
+):
     """Merge all selected frame videos into final output"""
     import traceback
     try:
-        merged_script = pipeline.merge_videos(script_id)
+        bgm_path = None
+        if audio_mode == "bgm" and bgm_file and bgm_file.filename:
+            audio_dir = os.path.join("output", "audio")
+            os.makedirs(audio_dir, exist_ok=True)
+            bgm_filename = f"bgm_{script_id}_{uuid.uuid4().hex[:8]}_{bgm_file.filename}"
+            bgm_path = os.path.join(audio_dir, bgm_filename)
+            with open(bgm_path, "wb") as f:
+                content = await bgm_file.read()
+                f.write(content)
+            bgm_path = os.path.abspath(bgm_path)
+
+        merged_script = pipeline.merge_videos(
+            script_id,
+            audio_mode=audio_mode,
+            bgm_path=bgm_path,
+            bgm_volume=bgm_volume,
+        )
         return signed_response(merged_script)
     except ValueError as e:
         # Known validation errors (no videos, etc.)

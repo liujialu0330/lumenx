@@ -325,8 +325,14 @@ export const api = {
         return res.data;
     },
 
-    mergeVideos: async (scriptId: string) => {
-        const res = await axios.post(`${API_URL}/projects/${scriptId}/merge`);
+    mergeVideos: async (scriptId: string, audioMode: string = "keep", bgmFile?: File, bgmVolume?: number) => {
+        const formData = new FormData();
+        formData.append("audio_mode", audioMode);
+        formData.append("bgm_volume", String(bgmVolume ?? 0.5));
+        if (bgmFile) {
+            formData.append("bgm_file", bgmFile);
+        }
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/merge`, formData);
         return res.data;
     },
 

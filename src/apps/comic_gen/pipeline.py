@@ -1562,7 +1562,7 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
-    def merge_videos(self, script_id: str) -> Script:
+    def merge_videos(self, script_id: str, audio_mode: str = "keep", bgm_path: str = None, bgm_volume: float = 0.5) -> Script:
         """Step 5b: Merge selected videos into a single file."""
         _validate_safe_id(script_id, "script_id")
         script = self.scripts.get(script_id)
@@ -1668,19 +1668,38 @@ class ComicGenPipeline:
         # Run ffmpeg
         # Use re-encoding for better compatibility (slower but more reliable)
         # -c:v libx264 -c:a aac ensures consistent output format
-        cmd = [
-            ffmpeg_path, "-y",  # Use the detected ffmpeg path
-            "-f", "concat",
-            "-safe", "0",
-            "-i", list_path,
-            "-c:v", "libx264",  # Re-encode video with H.264
-            "-crf", "23",       # Quality (lower = better, 23 is default)
-            "-preset", "fast",  # Encoding speed
-            "-c:a", "aac",      # Re-encode audio with AAC
-            "-b:a", "128k",     # Audio bitrate
-            "-movflags", "+faststart",  # Web optimization
-            output_path
-        ]
+        if audio_mode == "bgm" and bgm_path:
+            vol = max(0.0, min(1.0, bgm_volume))
+            cmd = [
+                ffmpeg_path, "-y",
+                "-f", "concat", "-safe", "0", "-i", list_path,
+                "-i", bgm_path,
+                "-c:v", "libx264", "-crf", "23", "-preset", "fast",
+                "-filter_complex", f"[1:a]volume={vol}[bgm]",
+                "-map", "0:v", "-map", "[bgm]",
+                "-c:a", "aac", "-b:a", "128k",
+                "-shortest",
+                "-movflags", "+faststart",
+                output_path
+            ]
+        elif audio_mode == "mute":
+            cmd = [
+                ffmpeg_path, "-y",
+                "-f", "concat", "-safe", "0", "-i", list_path,
+                "-c:v", "libx264", "-crf", "23", "-preset", "fast",
+                "-an",
+                "-movflags", "+faststart",
+                output_path
+            ]
+        else:
+            cmd = [
+                ffmpeg_path, "-y",
+                "-f", "concat", "-safe", "0", "-i", list_path,
+                "-c:v", "libx264", "-crf", "23", "-preset", "fast",
+                "-c:a", "aac", "-b:a", "128k",
+                "-movflags", "+faststart",
+                output_path
+            ]
         
         logger.debug(f"[MERGE] Running FFmpeg command: {' '.join(cmd)}")
         logger.debug(f"[MERGE] Platform: {platform.system()} {platform.release()}")

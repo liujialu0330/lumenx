@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Check, ChevronRight, Loader2, Film, AlertTriangle, Layout, Clock, FileText, Download, ExternalLink } from "lucide-react";
+import { Play, Check, ChevronRight, Loader2, Film, AlertTriangle, Layout, Clock, FileText, Download, ExternalLink, Music, VolumeX, Volume2, Upload } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL } from "@/lib/api";
 import { getAssetUrl, extractErrorDetail } from "@/lib/utils";
@@ -17,6 +17,11 @@ export default function VideoAssembly() {
     const [isMerging, setIsMerging] = useState(false);
     const [mergeError, setMergeError] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+
+    // Audio merge options
+    const [audioMode, setAudioMode] = useState<"keep" | "mute" | "bgm">("keep");
+    const [bgmFile, setBgmFile] = useState<File | null>(null);
+    const [bgmVolume, setBgmVolume] = useState(0.5);
 
     // FFmpeg install state
     const [installStatus, setInstallStatus] = useState<string>("idle");
@@ -103,7 +108,12 @@ export default function VideoAssembly() {
         setMergeError(null);  // Clear previous errors
 
         try {
-            const updatedProject = await api.mergeVideos(currentProject.id);
+            const updatedProject = await api.mergeVideos(
+                currentProject.id,
+                audioMode,
+                bgmFile || undefined,
+                bgmVolume
+            );
             updateProject(currentProject.id, updatedProject);
             // Success - error will be null, merged video will show below
         } catch (error: any) {
@@ -325,12 +335,67 @@ export default function VideoAssembly() {
                     </div>
 
                     {/* Bottom Action Bar */}
-                    <div className="h-20 border-t border-white/10 bg-black/40 backdrop-blur flex items-center justify-end px-8">
+                    <div className="border-t border-white/10 bg-black/40 backdrop-blur px-8 py-4 flex items-center gap-6">
+                        {/* Audio Mode Selection */}
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-400 mr-1">音频:</span>
+                            {([
+                                { value: "keep", label: "保留原声", icon: Volume2 },
+                                { value: "mute", label: "静音", icon: VolumeX },
+                                { value: "bgm", label: "替换BGM", icon: Music },
+                            ] as const).map(({ value, label, icon: Icon }) => (
+                                <button
+                                    key={value}
+                                    onClick={() => setAudioMode(value)}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                        audioMode === value
+                                            ? "bg-primary/20 border-primary/50 text-primary"
+                                            : "bg-white/5 border-white/10 text-gray-400 hover:bg-white/10 hover:text-gray-300"
+                                    }`}
+                                >
+                                    <Icon size={12} />
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* BGM upload & volume (only when bgm mode) */}
+                        {audioMode === "bgm" && (
+                            <div className="flex items-center gap-3">
+                                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 cursor-pointer transition-colors">
+                                    <Upload size={12} />
+                                    {bgmFile ? bgmFile.name.slice(0, 20) : "选择文件"}
+                                    <input
+                                        type="file"
+                                        accept="audio/*"
+                                        className="hidden"
+                                        onChange={(e) => setBgmFile(e.target.files?.[0] || null)}
+                                    />
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <VolumeX size={12} className="text-gray-500" />
+                                    <input
+                                        type="range"
+                                        min={0}
+                                        max={1}
+                                        step={0.05}
+                                        value={bgmVolume}
+                                        onChange={(e) => setBgmVolume(parseFloat(e.target.value))}
+                                        className="w-20 h-1 accent-primary"
+                                    />
+                                    <Volume2 size={12} className="text-gray-500" />
+                                    <span className="text-[10px] text-gray-500 w-8">{Math.round(bgmVolume * 100)}%</span>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex-1" />
+
                         <button
                             onClick={handleMerge}
-                            disabled={isMerging || (sysChecked && !ffmpegAvailable)}
+                            disabled={isMerging || (sysChecked && !ffmpegAvailable) || (audioMode === "bgm" && !bgmFile)}
                             className="bg-primary hover:bg-primary/90 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-primary/20"
-                            title={sysChecked && !ffmpegAvailable ? "请先安装 FFmpeg" : undefined}
+                            title={sysChecked && !ffmpegAvailable ? "请先安装 FFmpeg" : audioMode === "bgm" && !bgmFile ? "请先选择 BGM 文件" : undefined}
                         >
                             {isMerging ? <Loader2 className="animate-spin" /> : <Film />}
                             Merge & Proceed
