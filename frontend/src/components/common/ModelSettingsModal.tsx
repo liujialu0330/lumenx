@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, X, Image, Video, Film, Check, Layout, User, Building, Box } from 'lucide-react';
-import { useProjectStore, T2I_MODELS, I2I_MODELS, I2V_MODELS, ASPECT_RATIOS } from '@/store/projectStore';
+import { Settings, X, Image, Video, Film, Check, Layout, User, Building, Box, Brain } from 'lucide-react';
+import { useProjectStore, LLM_MODELS, T2I_MODELS, I2I_MODELS, I2V_MODELS, ASPECT_RATIOS } from '@/store/projectStore';
 import { api } from '@/lib/api';
 
 interface ModelSettingsModalProps {
@@ -15,6 +15,7 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
 
+    const [llmModel, setLlmModel] = useState(currentProject?.model_settings?.llm_model || '');
     const [t2iModel, setT2iModel] = useState(currentProject?.model_settings?.t2i_model || 'wan2.5-t2i-preview');
     const [i2iModel, setI2iModel] = useState(currentProject?.model_settings?.i2i_model || 'wan2.5-i2i-preview');
     const [i2vModel, setI2vModel] = useState(currentProject?.model_settings?.i2v_model || 'wan2.5-i2v-preview');
@@ -27,6 +28,7 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
     // Sync state when project changes
     useEffect(() => {
         if (currentProject?.model_settings) {
+            setLlmModel(currentProject.model_settings.llm_model || '');
             setT2iModel(currentProject.model_settings.t2i_model || 'wan2.5-t2i-preview');
             setI2iModel(currentProject.model_settings.i2i_model || 'wan2.5-i2i-preview');
             setI2vModel(currentProject.model_settings.i2v_model || 'wan2.5-i2v-preview');
@@ -49,7 +51,8 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
                 characterAspectRatio,
                 sceneAspectRatio,
                 propAspectRatio,
-                storyboardAspectRatio
+                storyboardAspectRatio,
+                llmModel || undefined
             );
             updateProject(currentProject.id, updated);
             onClose();
@@ -100,6 +103,40 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
 
                     {/* Content */}
                     <div className="p-5 space-y-6 overflow-y-auto">
+                        {/* LLM Section */}
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2 text-sm font-bold text-white">
+                                <Brain size={16} className="text-amber-400" />
+                                <span>Script Analysis (LLM)</span>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-xs text-gray-400">Model</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {LLM_MODELS.map((model) => (
+                                        <button
+                                            key={model.id}
+                                            onClick={() => setLlmModel(model.id)}
+                                            className={`relative flex flex-col items-start p-3 rounded-lg border transition-all text-left ${llmModel === model.id
+                                                    ? 'border-amber-500/50 bg-amber-500/10'
+                                                    : 'border-white/10 hover:border-white/20 bg-white/5'
+                                                }`}
+                                        >
+                                            {llmModel === model.id && (
+                                                <div className="absolute top-2 right-2">
+                                                    <Check size={14} className="text-amber-400" />
+                                                </div>
+                                            )}
+                                            <span className="text-sm font-medium text-white">{model.name}</span>
+                                            <span className="text-xs text-gray-500">{model.description}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="border-t border-white/10" />
+
                         {/* Assets Section */}
                         <div className="space-y-5">
                             <div className="flex items-center gap-2 text-sm font-bold text-white">

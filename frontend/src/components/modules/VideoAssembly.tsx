@@ -1,20 +1,80 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Check, ChevronRight, Loader2, Film, AlertTriangle, Layout, Clock, FileText, Download } from "lucide-react";
+import { Play, Check, ChevronRight, Loader2, Film, AlertTriangle, Layout, Clock, FileText, Download, ExternalLink, Music, VolumeX, Volume2, Upload } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL } from "@/lib/api";
 import { getAssetUrl, extractErrorDetail } from "@/lib/utils";
+import { useSystemStatus } from "@/components/project/SystemStatusProvider";
 
 export default function VideoAssembly() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
+    const { checked: sysChecked, ffmpegAvailable, recheckSystem } = useSystemStatus();
 
     const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
     const [isMerging, setIsMerging] = useState(false);
     const [mergeError, setMergeError] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+
+    // Audio merge options
+    const [audioMode, setAudioMode] = useState<"keep" | "mute" | "bgm">("keep");
+    const [bgmFile, setBgmFile] = useState<File | null>(null);
+    const [bgmVolume, setBgmVolume] = useState(0.5);
+
+    // FFmpeg install state
+    const [installStatus, setInstallStatus] = useState<string>("idle");
+    const [installProgress, setInstallProgress] = useState(0);
+    const [installMessage, setInstallMessage] = useState("");
+    const [installError, setInstallError] = useState<string | null>(null);
+    const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const stopPolling = useCallback(() => {
+        if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => {
+        return () => stopPolling();
+    }, [stopPolling]);
+
+    const handleInstallFfmpeg = async () => {
+        setInstallError(null);
+        setInstallStatus("downloading");
+        setInstallProgress(0);
+        setInstallMessage("正在启动...");
+
+        try {
+            await api.installFfmpeg();
+        } catch (e: any) {
+            const msg = e?.response?.data?.detail || e?.message || "启动安装失败";
+            setInstallStatus("failed");
+            setInstallError(msg);
+            return;
+        }
+
+        pollRef.current = setInterval(async () => {
+            try {
+                const s = await api.getInstallFfmpegStatus();
+                setInstallStatus(s.status);
+                setInstallProgress(s.progress ?? 0);
+                setInstallMessage(s.message ?? "");
+
+                if (s.status === "completed") {
+                    stopPolling();
+                    recheckSystem();
+                } else if (s.status === "failed") {
+                    stopPolling();
+                    setInstallError(s.error || "安装失败");
+                }
+            } catch {
+                // 网络抖动，忽略单次失败
+            }
+        }, 1500);
+    };
 
     // Group videos by frame
     const videosByFrame = useMemo(() => {
@@ -48,7 +108,12 @@ export default function VideoAssembly() {
         setMergeError(null);  // Clear previous errors
 
         try {
-            const updatedProject = await api.mergeVideos(currentProject.id);
+            const updatedProject = await api.mergeVideos(
+                currentProject.id,
+                audioMode,
+                bgmFile || undefined,
+                bgmVolume
+            );
             updateProject(currentProject.id, updatedProject);
             // Success - error will be null, merged video will show below
         } catch (error: any) {
@@ -58,9 +123,6 @@ export default function VideoAssembly() {
             const errorDetail = extractErrorDetail(error, "Unknown error occurred during video merge");
 
             setMergeError(errorDetail);
-
-            // Also show alert for immediate feedback
-            alert(`Failed to merge videos:\n\n${errorDetail}`);
         } finally {
             setIsMerging(false);
         }
@@ -119,6 +181,62 @@ export default function VideoAssembly() {
                             /{currentProject?.frames?.length} frames ready
                         </div>
                     </div>
+
+                    {/* FFmpeg Missing Warning */}
+                    {sysChecked && !ffmpegAvailable && (
+                        <div className="mx-6 mt-4 bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3 flex items-start gap-3">
+                            <AlertTriangle size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                            <div className="flex-1 text-sm">
+                                <span className="text-amber-400 font-medium">FFmpeg 未安装</span>
+                                <p className="text-amber-400/70 text-xs mt-1">
+                                    视频合并功能需要 FFmpeg。
+                                </p>
+
+                                {/* 安装按钮 / 进度 / 结果 */}
+                                {installStatus === "idle" || installStatus === "failed" ? (
+                                    <div className="mt-2 flex items-center gap-3 flex-wrap">
+                                        <button
+                                            onClick={handleInstallFfmpeg}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-md border border-amber-500/40 transition-colors"
+                                        >
+                                            <Download size={12} />
+                                            一键安装
+                                        </button>
+                                        <span className="text-amber-400/50 text-xs">或</span>
+                                        <a
+                                            href="https://www.gyan.dev/ffmpeg/builds/"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 text-xs text-amber-300 hover:text-amber-200 underline"
+                                        >
+                                            手动下载 <ExternalLink size={12} />
+                                        </a>
+                                        {installError && (
+                                            <p className="w-full text-xs text-red-400 mt-1">{installError}</p>
+                                        )}
+                                    </div>
+                                ) : installStatus === "downloading" || installStatus === "extracting" ? (
+                                    <div className="mt-2 space-y-1.5">
+                                        <div className="w-full h-2 bg-black/30 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-amber-500 rounded-full transition-all duration-300"
+                                                style={{ width: `${installProgress}%` }}
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-2 text-xs text-amber-400/70">
+                                            <Loader2 size={12} className="animate-spin" />
+                                            <span>{installMessage || "请稍候..."}</span>
+                                        </div>
+                                    </div>
+                                ) : installStatus === "completed" ? (
+                                    <div className="mt-2 flex items-center gap-1.5 text-xs text-green-400">
+                                        <Check size={14} />
+                                        <span>安装完成，正在刷新检测...</span>
+                                    </div>
+                                ) : null}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Vertical List */}
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4">
@@ -217,11 +335,67 @@ export default function VideoAssembly() {
                     </div>
 
                     {/* Bottom Action Bar */}
-                    <div className="h-20 border-t border-white/10 bg-black/40 backdrop-blur flex items-center justify-end px-8">
+                    <div className="border-t border-white/10 bg-black/40 backdrop-blur px-8 py-4 flex items-center gap-6">
+                        {/* Audio Mode Selection */}
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-400 mr-1">音频:</span>
+                            {([
+                                { value: "keep", label: "保留原声", icon: Volume2 },
+                                { value: "mute", label: "静音", icon: VolumeX },
+                                { value: "bgm", label: "替换BGM", icon: Music },
+                            ] as const).map(({ value, label, icon: Icon }) => (
+                                <button
+                                    key={value}
+                                    onClick={() => setAudioMode(value)}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                        audioMode === value
+                                            ? "bg-primary/20 border-primary/50 text-primary"
+                                            : "bg-white/5 border-white/10 text-gray-400 hover:bg-white/10 hover:text-gray-300"
+                                    }`}
+                                >
+                                    <Icon size={12} />
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* BGM upload & volume (only when bgm mode) */}
+                        {audioMode === "bgm" && (
+                            <div className="flex items-center gap-3">
+                                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 cursor-pointer transition-colors">
+                                    <Upload size={12} />
+                                    {bgmFile ? bgmFile.name.slice(0, 20) : "选择文件"}
+                                    <input
+                                        type="file"
+                                        accept="audio/*"
+                                        className="hidden"
+                                        onChange={(e) => setBgmFile(e.target.files?.[0] || null)}
+                                    />
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <VolumeX size={12} className="text-gray-500" />
+                                    <input
+                                        type="range"
+                                        min={0}
+                                        max={1}
+                                        step={0.05}
+                                        value={bgmVolume}
+                                        onChange={(e) => setBgmVolume(parseFloat(e.target.value))}
+                                        className="w-20 h-1 accent-primary"
+                                    />
+                                    <Volume2 size={12} className="text-gray-500" />
+                                    <span className="text-[10px] text-gray-500 w-8">{Math.round(bgmVolume * 100)}%</span>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex-1" />
+
                         <button
                             onClick={handleMerge}
-                            disabled={isMerging}
+                            disabled={isMerging || (sysChecked && !ffmpegAvailable) || (audioMode === "bgm" && !bgmFile)}
                             className="bg-primary hover:bg-primary/90 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-primary/20"
+                            title={sysChecked && !ffmpegAvailable ? "请先安装 FFmpeg" : audioMode === "bgm" && !bgmFile ? "请先选择 BGM 文件" : undefined}
                         >
                             {isMerging ? <Loader2 className="animate-spin" /> : <Film />}
                             Merge & Proceed

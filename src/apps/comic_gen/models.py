@@ -197,7 +197,7 @@ class StoryboardFrame(BaseModel):
     
     # === Camera Parameters ===
     shot_size: Optional[str] = Field(None, description="Shot size: 特写/近景/中景/全景/远景")
-    camera_angle: str = Field("Medium Shot", description="Camera angle/shot type (Legacy)")
+    camera_angle: str = Field("平视", description="Camera angle: 平视/俯视/仰视/侧面/过肩")
     camera_movement: Optional[str] = Field(None, description="Camera movement")
     composition: Optional[str] = Field(None, description="Visual composition guide")
     atmosphere: Optional[str] = Field(None, description="Mood of this specific shot (Legacy, use visual_atmosphere)")
@@ -228,6 +228,7 @@ class StoryboardFrame(BaseModel):
 
 class ModelSettings(BaseModel):
     """Model selection settings for different generation stages"""
+    llm_model: Optional[str] = Field(None, description="LLM model for script analysis (None = provider default)")
     t2i_model: str = Field("wan2.6-t2i", description="Text-to-Image model for Assets")
     i2i_model: str = Field("wan2.6-image", description="Image-to-Image model for Storyboard")
     i2v_model: str = Field("wan2.6-i2v", description="Image-to-Video model for Motion")

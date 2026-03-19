@@ -2,7 +2,7 @@ import os
 import time
 from typing import Dict, Any, List
 from .models import StoryboardFrame, Character, Scene, Prop, GenerationStatus, ImageAsset, ImageVariant
-from ...models.image import WanxImageModel
+from ...models.image import WanxImageModel, DoubaoImageModel
 from ...utils import get_logger
 from ...utils.oss_utils import is_object_key
 
@@ -12,7 +12,27 @@ class StoryboardGenerator:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
         self.model = WanxImageModel(self.config.get('model', {}))
+        self._doubao_model = None
         self.output_dir = self.config.get('output_dir', 'output/storyboard')
+
+    def _get_model(self, model_name: str = None):
+        """Return appropriate image model based on model_name.
+
+        Auto-fallback: when DASHSCOPE_API_KEY is absent but ARK_API_KEY is
+        available, route to DoubaoImageModel even if the requested model name
+        is a Wanx model (avoids 401 errors for users who only configured ARK).
+        """
+        use_doubao = False
+        if model_name and model_name.startswith("doubao-seedream"):
+            use_doubao = True
+        elif not os.getenv("DASHSCOPE_API_KEY") and os.getenv("ARK_API_KEY"):
+            use_doubao = True
+
+        if use_doubao:
+            if self._doubao_model is None:
+                self._doubao_model = DoubaoImageModel(self.config.get('model', {}))
+            return self._doubao_model
+        return self.model
 
     def generate_storyboard(self, script: Any) -> Any:
         """Generates images for all frames in the storyboard."""
@@ -124,11 +144,11 @@ class StoryboardGenerator:
                         elif os.path.exists(scene_url):
                             asset_ref_paths.append(os.path.abspath(scene_url))
         
-        # Collect character descriptions for prompt building
+        # Collect character names for prompt building (visual consistency via ref images, not text)
         for char_id in frame.character_ids:
             char = next((c for c in characters if c.id == char_id), None)
             if char:
-                char_descriptions.append(f"{char.name} ({char.description})")
+                char_descriptions.append(char.name)
         
         char_text = ", ".join(char_descriptions)
 
@@ -173,7 +193,7 @@ class StoryboardGenerator:
                 # Use I2I if reference images are available
                 # Pass collected asset paths to model
                 logger.info(f"[Storyboard] Calling model.generate with {len(asset_ref_paths)} reference images using model {model_name or 'default'}")
-                self.model.generate(prompt, output_path, ref_image_paths=asset_ref_paths, size=effective_size, model_name=model_name)
+                self._get_model(model_name).generate(prompt, output_path, ref_image_paths=asset_ref_paths, size=effective_size, model_name=model_name)
                 
                 # Store relative path for frontend serving
                 rel_path = os.path.relpath(output_path, "output")

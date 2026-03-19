@@ -172,7 +172,7 @@ class ScriptProcessor:
                 facial_expression=frame_data.get("facial_expression"),
                 dialogue=dialogue_text,
                 speaker=speaker_name,
-                camera_angle=frame_data.get("camera_angle", "Medium Shot"),
+                camera_angle=frame_data.get("camera_angle", "平视"),
                 camera_movement=frame_data.get("camera_movement"),
                 composition=frame_data.get("composition"),
                 atmosphere=frame_data.get("atmosphere"),

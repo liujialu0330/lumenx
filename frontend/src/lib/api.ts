@@ -242,6 +242,11 @@ export const api = {
         return res.data;
     },
 
+    deleteVideoTask: async (scriptId: string, videoTaskId: string) => {
+        const res = await axios.delete(`${API_URL}/projects/${scriptId}/video_tasks/${videoTaskId}`);
+        return res.data;
+    },
+
     toggleAssetLock: async (scriptId: string, assetId: string, assetType: string) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/assets/toggle_lock`, {
             asset_id: assetId,
@@ -297,7 +302,8 @@ export const api = {
         characterAspectRatio?: string,
         sceneAspectRatio?: string,
         propAspectRatio?: string,
-        storyboardAspectRatio?: string
+        storyboardAspectRatio?: string,
+        llmModel?: string
     ) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/model_settings`, {
             t2i_model: t2iModel,
@@ -306,7 +312,8 @@ export const api = {
             character_aspect_ratio: characterAspectRatio,
             scene_aspect_ratio: sceneAspectRatio,
             prop_aspect_ratio: propAspectRatio,
-            storyboard_aspect_ratio: storyboardAspectRatio
+            storyboard_aspect_ratio: storyboardAspectRatio,
+            llm_model: llmModel,
         });
         return res.data;
     },
@@ -318,8 +325,14 @@ export const api = {
         return res.data;
     },
 
-    mergeVideos: async (scriptId: string) => {
-        const res = await axios.post(`${API_URL}/projects/${scriptId}/merge`);
+    mergeVideos: async (scriptId: string, audioMode: string = "keep", bgmFile?: File, bgmVolume?: number) => {
+        const formData = new FormData();
+        formData.append("audio_mode", audioMode);
+        formData.append("bgm_volume", String(bgmVolume ?? 0.5));
+        if (bgmFile) {
+            formData.append("bgm_file", bgmFile);
+        }
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/merge`, formData);
         return res.data;
     },
 
@@ -507,6 +520,21 @@ export const api = {
         const res = await axios.post(`${API_URL}/config/env`, config, {
             timeout: 60000, // 60 seconds timeout
         });
+        return res.data;
+    },
+
+    checkSystem: async () => {
+        const res = await axios.get(`${API_URL}/system/check`);
+        return res.data;
+    },
+
+    installFfmpeg: async () => {
+        const res = await axios.post(`${API_URL}/system/install-ffmpeg`);
+        return res.data;
+    },
+
+    getInstallFfmpegStatus: async () => {
+        const res = await axios.get(`${API_URL}/system/install-ffmpeg/status`);
         return res.data;
     },
 

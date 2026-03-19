@@ -17,15 +17,19 @@ interface EnvConfig {
   OSS_BUCKET_NAME: string;
   OSS_ENDPOINT: string;
   OSS_BASE_PATH: string;
+  ARK_API_KEY: string;
   KLING_ACCESS_KEY: string;
   KLING_SECRET_KEY: string;
   VIDU_API_KEY: string;
+  VOLC_TTS_APPID: string;
+  VOLC_TTS_TOKEN: string;
   endpoint_overrides: Record<string, string>;
   [key: string]: string | Record<string, string>;
 }
 
 const ENDPOINT_PROVIDERS = [
   { key: "DASHSCOPE_BASE_URL", label: "DashScope", placeholder: "https://dashscope.aliyuncs.com" },
+  { key: "ARK_BASE_URL", label: "ARK (豆包)", placeholder: "https://ark.cn-beijing.volces.com/api/v3" },
   { key: "KLING_BASE_URL", label: "Kling", placeholder: "https://api-beijing.klingai.com/v1" },
   { key: "VIDU_BASE_URL", label: "Vidu", placeholder: "https://api.vidu.cn/ent/v2" },
 ];
@@ -38,9 +42,12 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
     OSS_BUCKET_NAME: "",
     OSS_ENDPOINT: "",
     OSS_BASE_PATH: "",
+    ARK_API_KEY: "",
     KLING_ACCESS_KEY: "",
     KLING_SECRET_KEY: "",
     VIDU_API_KEY: "",
+    VOLC_TTS_APPID: "",
+    VOLC_TTS_TOKEN: "",
     endpoint_overrides: {},
   });
   const [loading, setLoading] = useState(false);
@@ -65,36 +72,12 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
     }
   };
 
-  const validateRequiredFields = () => {
-    const dashscopeKey = config.DASHSCOPE_API_KEY?.trim();
-    const accessKeyId = config.ALIBABA_CLOUD_ACCESS_KEY_ID?.trim();
-    const accessKeySecret = config.ALIBABA_CLOUD_ACCESS_KEY_SECRET?.trim();
-    const ossBucket = config.OSS_BUCKET_NAME?.trim();
-    const ossEndpoint = config.OSS_ENDPOINT?.trim();
-
-    return dashscopeKey && dashscopeKey.length > 0 &&
-      accessKeyId && accessKeyId.length > 0 &&
-      accessKeySecret && accessKeySecret.length > 0 &&
-      ossBucket && ossBucket.length > 0 &&
-      ossEndpoint && ossEndpoint.length > 0;
-  };
-
   const handleSave = async () => {
-    // 必填项校验：空值和空字符串都视为未填写
-    if (!validateRequiredFields()) {
-      alert("请填写所有必填项：\n- DashScope API Key\n- 阿里云 Access Key ID\n- 阿里云 Access Key Secret\n- OSS Bucket Name\n- OSS Endpoint");
-      return;
-    }
-
     setSaving(true);
     try {
       await api.saveEnvConfig(config);
       alert("配置保存成功！");
       onClose();
-      // 如果是必填配置保存成功后，可以考虑刷新页面以重新检查配置
-      if (isRequired) {
-        window.location.reload();
-      }
     } catch (error) {
       console.error("Failed to save env config:", error);
       alert("保存配置失败,请重试");
@@ -114,7 +97,7 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
     }));
   };
 
-  const canClose = !isRequired || validateRequiredFields();
+  const canClose = true;
 
   if (!isOpen) return null;
 
@@ -127,7 +110,7 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
             <Settings className="text-primary" size={24} />
             <div>
               <h2 className="text-xl font-bold text-white">环境变量配置</h2>
-              <p className="text-sm text-gray-400">配置阿里云服务的访问凭证</p>
+              <p className="text-sm text-gray-400">配置 AI 模型服务的访问凭证</p>
             </div>
           </div>
           {canClose && (
@@ -142,14 +125,6 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
 
         {/* Content */}
         <div className="p-6 space-y-6">
-          {isRequired && (
-            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
-              <p className="text-yellow-500 text-sm">
-                ⚠️ 检测到环境变量缺失，请填写以下必填项以继续使用系统。
-              </p>
-            </div>
-          )}
-
           {loading ? (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
@@ -160,7 +135,7 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
               {/* DashScope API Key */}
               <div>
                 <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                  <span>DashScope API Key <span className="text-red-500">*</span></span>
+                  <span>DashScope API Key</span>
                   <span className="text-gray-500 font-normal">例: sk-xxx</span>
                 </label>
                 <input
@@ -178,7 +153,7 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
 
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    阿里云 Access Key ID <span className="text-red-500">*</span>
+                    阿里云 Access Key ID
                   </label>
                   <input
                     type="password"
@@ -191,7 +166,7 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
 
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    阿里云 Access Key Secret <span className="text-red-500">*</span>
+                    阿里云 Access Key Secret
                   </label>
                   <input
                     type="password"
@@ -220,7 +195,7 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                 <div className="space-y-4">
                   <div>
                     <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                      <span>OSS Bucket Name <span className="text-red-500">*</span></span>
+                      <span>OSS Bucket Name</span>
                       <span className="text-gray-500 font-normal">例: my-comic-bucket</span>
                     </label>
                     <input
@@ -234,7 +209,7 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
 
                   <div>
                     <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                      <span>OSS Endpoint <span className="text-red-500">*</span></span>
+                      <span>OSS Endpoint</span>
                       <span className="text-gray-500 font-normal">例: oss-cn-hangzhou.aliyuncs.com</span>
                     </label>
                     <input
@@ -256,6 +231,66 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                       value={config.OSS_BASE_PATH}
                       onChange={(e) => handleChange("OSS_BASE_PATH", e.target.value)}
                       placeholder="lumenx"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Doubao / 火山引擎 ARK Configuration */}
+              <div className="pt-4 border-t border-gray-800">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-white">豆包 / 火山引擎配置</h3>
+                  <span className="text-xs text-gray-500">可选 - 用于豆包模型（LLM / 图像 / 视频）</span>
+                </div>
+
+                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4">
+                  <div>
+                    <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
+                      <span>ARK API Key</span>
+                      <span className="text-gray-500 font-normal">火山引擎 ARK 平台密钥</span>
+                    </label>
+                    <input
+                      type="password"
+                      value={config.ARK_API_KEY}
+                      onChange={(e) => handleChange("ARK_API_KEY", e.target.value)}
+                      placeholder="用于豆包 LLM / SeeDream / SeeDance"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 火山引擎 TTS Configuration */}
+              <div className="pt-4 border-t border-gray-800">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-white">火山引擎 TTS 配置</h3>
+                  <span className="text-xs text-gray-500">可选 - 用于豆包语音合成</span>
+                </div>
+
+                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      TTS App ID
+                    </label>
+                    <input
+                      type="text"
+                      value={config.VOLC_TTS_APPID}
+                      onChange={(e) => handleChange("VOLC_TTS_APPID", e.target.value)}
+                      placeholder="火山引擎语音合成应用 ID"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      TTS Access Token
+                    </label>
+                    <input
+                      type="password"
+                      value={config.VOLC_TTS_TOKEN}
+                      onChange={(e) => handleChange("VOLC_TTS_TOKEN", e.target.value)}
+                      placeholder="火山引擎语音合成 Access Token"
                       className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-primary"
                     />
                   </div>

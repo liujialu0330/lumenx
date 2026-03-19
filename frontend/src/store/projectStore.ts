@@ -130,6 +130,7 @@ export interface ArtDirection {
 }
 
 export interface ModelSettings {
+    llm_model: string | null;  // LLM model for script analysis
     t2i_model: string;  // Text-to-Image model for Assets
     i2i_model: string;  // Image-to-Image model for Storyboard
     i2v_model: string;  // Image-to-Video model for Motion
@@ -139,17 +140,25 @@ export interface ModelSettings {
     storyboard_aspect_ratio: string;  // Aspect ratio for Storyboard generation
 }
 
+// LLM model options for script analysis
+export const LLM_MODELS = [
+    { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus', description: 'DashScope 默认' },
+    { id: 'doubao-seed-2-0-pro-260215', name: 'Doubao Seed 2.0 Pro', description: '豆包 LLM' },
+];
+
 // Model options for dropdowns
 export const T2I_MODELS = [
     { id: 'wan2.6-t2i', name: 'Wan 2.6 T2I', description: 'Latest T2I model' },
     { id: 'wan2.5-t2i-preview', name: 'Wan 2.5 T2I Preview', description: 'Default T2I' },
     { id: 'wan2.2-t2i-plus', name: 'Wan 2.2 T2I Plus', description: 'Higher quality' },
     { id: 'wan2.2-t2i-flash', name: 'Wan 2.2 T2I Flash', description: 'Faster generation' },
+    { id: 'doubao-seedream-5-0-260128', name: 'Doubao SeeDream 5.0', description: '豆包图像生成' },
 ];
 
 export const I2I_MODELS = [
     { id: 'wan2.6-image', name: 'Wan 2.6 Image', description: 'Latest I2I model (HTTP)' },
     { id: 'wan2.5-i2i-preview', name: 'Wan 2.5 I2I Preview', description: 'Default I2I' },
+    { id: 'doubao-seedream-5-0-260128', name: 'Doubao SeeDream 5.0', description: '豆包图像生成' },
 ];
 
 export type DurationConfig =
@@ -209,6 +218,10 @@ const VIDU_PARAMS: ModelParamSupport = {
     movementAmplitude: { options: ['auto', 'small', 'medium', 'large'], default: 'auto' },
 };
 
+const DOUBAO_PARAMS: ModelParamSupport = {
+    resolution: { options: ['720p'], default: '720p' },
+};
+
 export const I2V_MODELS: I2VModelConfig[] = [
     { id: 'wan2.6-i2v', name: 'Wan 2.6 I2V / R2V', description: 'Latest model, supports R2V',
       duration: { type: 'slider', min: 2, max: 15, step: 1, default: 5 }, params: WAN26_PARAMS },
@@ -226,6 +239,8 @@ export const I2V_MODELS: I2VModelConfig[] = [
       duration: { type: 'slider', min: 1, max: 16, step: 1, default: 5 }, params: VIDU_PARAMS },
     { id: 'viduq3-turbo', name: 'Vidu Q3 Turbo', description: 'Vidu fast generation',
       duration: { type: 'slider', min: 1, max: 16, step: 1, default: 5 }, params: VIDU_PARAMS },
+    { id: 'doubao-seedance-1-5-pro-251215', name: 'Doubao SeeDance 1.5', description: '豆包视频生成',
+      duration: { type: 'slider', min: 2, max: 10, step: 1, default: 5 }, params: DOUBAO_PARAMS },
 ];
 
 export const ASPECT_RATIOS = [

@@ -19,6 +19,7 @@ import FinalMixStudio from "@/components/modules/FinalMixStudio";
 import ExportStudio from "@/components/modules/ExportStudio";
 import ModelSettingsModal from "@/components/common/ModelSettingsModal";
 import EnvConfigDialog from "@/components/project/EnvConfigDialog";
+import SystemStatusProvider from "@/components/project/SystemStatusProvider";
 import dynamic from "next/dynamic";
 
 const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"), { ssr: false });
@@ -70,6 +71,7 @@ export default function ProjectClient({ id }: { id: string }) {
     }
 
     return (
+        <SystemStatusProvider>
         <main className="flex h-screen w-screen bg-background overflow-hidden relative">
             {/* Background Canvas */}
             <div className="absolute inset-0 z-0 pointer-events-auto">
@@ -144,5 +146,6 @@ export default function ProjectClient({ id }: { id: string }) {
                 {activeStep !== "assembly" && activeStep !== "art_direction" && <PropertiesPanel activeStep={activeStep} />}
             </div>
         </main>
+        </SystemStatusProvider>
     );
 }

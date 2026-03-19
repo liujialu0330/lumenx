@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -121,8 +121,24 @@ def signed_response(data):
 @app.get("/system/check")
 async def check_system():
     """Check system dependencies (ffmpeg, etc.) and configuration."""
-    from utils.system_check import run_system_checks
+    from ...utils.system_check import run_system_checks
     return run_system_checks()
+
+
+@app.post("/system/install-ffmpeg")
+async def install_ffmpeg_endpoint(background_tasks: BackgroundTasks):
+    from ...utils.ffmpeg_installer import install_ffmpeg, get_install_status
+    status = get_install_status()
+    if status["status"] in ("downloading", "extracting"):
+        raise HTTPException(400, "安装正在进行中")
+    background_tasks.add_task(install_ffmpeg)
+    return {"message": "安装已启动"}
+
+
+@app.get("/system/install-ffmpeg/status")
+async def install_ffmpeg_status():
+    from ...utils.ffmpeg_installer import get_install_status
+    return get_install_status()
 
 
 
@@ -263,9 +279,14 @@ class EnvConfig(BaseModel):
     OSS_BUCKET_NAME: Optional[str] = None
     OSS_ENDPOINT: Optional[str] = None
     OSS_BASE_PATH: Optional[str] = None
+    ARK_API_KEY: Optional[str] = None
     KLING_ACCESS_KEY: Optional[str] = None
     KLING_SECRET_KEY: Optional[str] = None
     VIDU_API_KEY: Optional[str] = None
+    VOLC_TTS_APPID: Optional[str] = None
+    VOLC_TTS_TOKEN: Optional[str] = None
+    LLM_PROVIDER: Optional[str] = None
+    TTS_PROVIDER: Optional[str] = None
     endpoint_overrides: Dict[str, str] = {}
 
 
@@ -882,6 +903,18 @@ async def delete_asset_video(script_id: str, asset_type: str, asset_id: str, vid
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.delete("/projects/{script_id}/video_tasks/{video_task_id}", response_model=Script)
+async def delete_video_task(script_id: str, video_task_id: str):
+    """Deletes a video task from the project."""
+    try:
+        updated_script = pipeline.delete_video_task(script_id, video_task_id)
+        return signed_response(updated_script)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 
 class ToggleLockRequest(BaseModel):
     asset_id: str
@@ -1048,6 +1081,7 @@ async def toggle_variant_favorite(script_id: str, request: FavoriteVariantReques
         raise HTTPException(status_code=500, detail=str(e))
 
 class UpdateModelSettingsRequest(BaseModel):
+    llm_model: Optional[str] = None
     t2i_model: Optional[str] = None
     i2i_model: Optional[str] = None
     i2v_model: Optional[str] = None
@@ -1068,7 +1102,8 @@ async def update_model_settings(script_id: str, request: UpdateModelSettingsRequ
             request.character_aspect_ratio,
             request.scene_aspect_ratio,
             request.prop_aspect_ratio,
-            request.storyboard_aspect_ratio
+            request.storyboard_aspect_ratio,
+            request.llm_model,
         )
         return signed_response(updated_script)
     except ValueError as e:
@@ -1331,11 +1366,32 @@ async def upload_frame_image(script_id: str, frame_id: str, file: UploadFile = F
 
 
 @app.post("/projects/{script_id}/merge", response_model=Script)
-async def merge_videos(script_id: str):
+async def merge_videos(
+    script_id: str,
+    audio_mode: str = Form("keep"),
+    bgm_volume: float = Form(0.5),
+    bgm_file: UploadFile = File(None),
+):
     """Merge all selected frame videos into final output"""
     import traceback
     try:
-        merged_script = pipeline.merge_videos(script_id)
+        bgm_path = None
+        if audio_mode == "bgm" and bgm_file and bgm_file.filename:
+            audio_dir = os.path.join("output", "audio")
+            os.makedirs(audio_dir, exist_ok=True)
+            bgm_filename = f"bgm_{script_id}_{uuid.uuid4().hex[:8]}_{bgm_file.filename}"
+            bgm_path = os.path.join(audio_dir, bgm_filename)
+            with open(bgm_path, "wb") as f:
+                content = await bgm_file.read()
+                f.write(content)
+            bgm_path = os.path.abspath(bgm_path)
+
+        merged_script = pipeline.merge_videos(
+            script_id,
+            audio_mode=audio_mode,
+            bgm_path=bgm_path,
+            bgm_volume=bgm_volume,
+        )
         return signed_response(merged_script)
     except ValueError as e:
         # Known validation errors (no videos, etc.)
@@ -1504,9 +1560,14 @@ async def get_env_config():
             "OSS_BUCKET_NAME": os.getenv("OSS_BUCKET_NAME", ""),
             "OSS_ENDPOINT": os.getenv("OSS_ENDPOINT", ""),
             "OSS_BASE_PATH": os.getenv("OSS_BASE_PATH", ""),
+            "ARK_API_KEY": os.getenv("ARK_API_KEY", ""),
             "KLING_ACCESS_KEY": os.getenv("KLING_ACCESS_KEY", ""),
             "KLING_SECRET_KEY": os.getenv("KLING_SECRET_KEY", ""),
             "VIDU_API_KEY": os.getenv("VIDU_API_KEY", ""),
+            "VOLC_TTS_APPID": os.getenv("VOLC_TTS_APPID", ""),
+            "VOLC_TTS_TOKEN": os.getenv("VOLC_TTS_TOKEN", ""),
+            "LLM_PROVIDER": os.getenv("LLM_PROVIDER", ""),
+            "TTS_PROVIDER": os.getenv("TTS_PROVIDER", ""),
             "endpoint_overrides": endpoint_overrides,
         }
     except Exception as e:

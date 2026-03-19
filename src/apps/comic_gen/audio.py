@@ -3,7 +3,7 @@ import time
 from typing import Dict, Any, List
 from .models import StoryboardFrame, Character, GenerationStatus
 from ...utils import get_logger
-from ...audio.tts import TTSProcessor
+from ...audio.tts import TTSProcessor, create_tts_processor
 
 logger = get_logger(__name__)
 
@@ -14,7 +14,7 @@ class AudioGenerator:
         
         # Initialize TTS Processor
         try:
-            self.tts = TTSProcessor()
+            self.tts = create_tts_processor()
             logger.info("TTS Processor initialized successfully")
         except Exception as e:
             logger.warning(f"Failed to initialize TTS Processor: {e}. Using mock mode.")

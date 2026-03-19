@@ -1,12 +1,18 @@
 """
-Text-to-Speech (TTS) module using DashScope CosyVoice API.
-Converts text to speech audio for use in video lip-sync.
+Text-to-Speech (TTS) module supporting multiple providers.
 
-Supports cosyvoice-v2 and cosyvoice-v3-flash/v3-plus models.
-See: https://help.aliyun.com/zh/model-studio/cosyvoice-python-sdk
+Providers:
+  - cosyvoice (default): DashScope CosyVoice API
+  - doubao: Volcengine TTS HTTP API (openspeech.bytedance.com)
+
+Factory function create_tts_processor() selects implementation based on TTS_PROVIDER env var.
 """
 import os
 import logging
+import uuid
+import base64
+import time
+import requests
 from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -102,7 +108,6 @@ class TTSProcessor:
         Returns:
             Tuple[str, float, str]: (output_path, first_package_delay_ms, request_id)
         """
-        import time
         from dashscope.audio.tts_v2 import SpeechSynthesizer
 
         start_time = time.time()
@@ -159,3 +164,124 @@ class TTSProcessor:
     def list_voices():
         """List available voices with metadata"""
         return VOICES
+
+
+class DoubaoTTSProcessor:
+    """Text-to-Speech processor using Volcengine TTS HTTP API (openspeech.bytedance.com)."""
+
+    API_URL = "https://openspeech.bytedance.com/api/v1/tts"
+
+    def __init__(
+        self,
+        appid: Optional[str] = None,
+        token: Optional[str] = None,
+        voice: str = "zh_female_wanwanxiaohe_moon_bigtts",
+    ):
+        self.appid = appid or os.getenv("VOLC_TTS_APPID")
+        self.token = token or os.getenv("VOLC_TTS_TOKEN")
+        self.voice = voice
+
+        if not self.appid or not self.token:
+            logger.warning("Volcengine TTS credentials not configured (VOLC_TTS_APPID / VOLC_TTS_TOKEN)")
+
+        logger.info(f"DoubaoTTSProcessor initialized with voice={voice}")
+
+    def synthesize(
+        self,
+        text: str,
+        output_path: str,
+        voice: Optional[str] = None,
+        speech_rate: float = 1.0,
+        pitch_rate: float = 1.0,
+        volume: int = 50,
+    ) -> Tuple[str, float, str]:
+        """
+        Synthesize speech via Volcengine TTS HTTP V1 API.
+
+        Returns:
+            Tuple[str, float, str]: (output_path, duration_ms, request_id)
+        """
+        start_time = time.time()
+        voice = voice or self.voice
+        reqid = str(uuid.uuid4())
+
+        speed_ratio = max(0.1, min(2.0, speech_rate))
+        loudness_ratio = max(0.5, min(2.0, volume / 50.0))
+
+        payload = {
+            "app": {
+                "appid": self.appid,
+                "token": self.token,
+                "cluster": "volcano_tts",
+            },
+            "user": {
+                "uid": "lumenx_user",
+            },
+            "audio": {
+                "voice_type": voice,
+                "encoding": "mp3",
+                "speed_ratio": speed_ratio,
+                "loudness_ratio": loudness_ratio,
+            },
+            "request": {
+                "reqid": reqid,
+                "text": text,
+                "operation": "query",
+            },
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer;{self.token}",
+        }
+
+        logger.info(f"Volcengine TTS: voice={voice}, text={text[:80]}...")
+
+        try:
+            resp = requests.post(self.API_URL, json=payload, headers=headers, timeout=30)
+            resp.raise_for_status()
+            result = resp.json()
+
+            code = result.get("code", -1)
+            if code != 3000:
+                raise RuntimeError(f"Volcengine TTS error code={code}: {result.get('message', '')}")
+
+            audio_b64 = result.get("data", "")
+            if not audio_b64:
+                raise RuntimeError("Volcengine TTS returned empty audio data")
+
+            audio_bytes = base64.b64decode(audio_b64)
+
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            with open(output_path, 'wb') as f:
+                f.write(audio_bytes)
+
+            duration_ms = float(result.get("addition", {}).get("duration", "0"))
+            total = time.time() - start_time
+            logger.info(f"Volcengine TTS done: reqid={reqid}, audio_duration={duration_ms}ms, total={total:.2f}s -> {output_path}")
+
+            return output_path, duration_ms, reqid
+
+        except requests.RequestException as e:
+            raise RuntimeError(f"Volcengine TTS request failed: {e}") from e
+
+    @staticmethod
+    def list_voices():
+        """List available voices (placeholder - Volcengine has a separate voice list API)."""
+        return {}
+
+
+def create_tts_processor(provider: Optional[str] = None, **kwargs):
+    """Factory: create TTS processor based on TTS_PROVIDER env var.
+
+    Args:
+        provider: Override provider selection ('cosyvoice' or 'doubao').
+        **kwargs: Passed to the processor constructor.
+
+    Returns:
+        TTSProcessor or DoubaoTTSProcessor instance.
+    """
+    provider = provider or os.getenv("TTS_PROVIDER", "cosyvoice").lower()
+    if provider == "doubao":
+        return DoubaoTTSProcessor(**kwargs)
+    return TTSProcessor(**kwargs)

@@ -49,6 +49,7 @@ def get_ffmpeg_path() -> str:
     # Check common Windows installation paths as fallback.
     if platform.system() == "Windows":
         common_windows_paths = [
+            os.path.join(os.path.expanduser("~"), ".lumen-x", "ffmpeg", "bin", "ffmpeg.exe"),
             os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "ffmpeg", "bin", "ffmpeg.exe"),
             os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "ffmpeg", "bin", "ffmpeg.exe"),
             os.path.join(os.environ.get("LOCALAPPDATA", ""), "ffmpeg", "bin", "ffmpeg.exe"),

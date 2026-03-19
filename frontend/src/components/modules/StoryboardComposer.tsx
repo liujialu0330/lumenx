@@ -628,7 +628,7 @@ function CreateFrameDialog({ onClose, onCreate, scenes }: { onClose: () => void;
                 action_description: action.trim(),
                 dialogue: dialogue.trim(),
                 scene_id: sceneId,
-                camera_angle: "Medium Shot"
+                camera_angle: "平视"
             });
         } finally {
             setIsSubmitting(false);

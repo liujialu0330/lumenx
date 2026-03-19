@@ -446,11 +446,11 @@ class WanxImageModel(ImageGenModel):
 
     def _download_image(self, url: str, output_path: str):
         logger.info(f"Downloading image to {output_path}...")
-        
+
         # Setup retry strategy
         from requests.adapters import HTTPAdapter
         from requests.packages.urllib3.util.retry import Retry
-        
+
         retry_strategy = Retry(
             total=5,
             backoff_factor=1,
@@ -466,20 +466,134 @@ class WanxImageModel(ImageGenModel):
         try:
             response = http.get(url, stream=True, timeout=60, verify=False) # verify=False to avoid some SSL issues
             response.raise_for_status()
-            
+
             # Ensure directory exists
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            
+
             with open(temp_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
-            
+
             # Atomic rename
             os.rename(temp_path, output_path)
             logger.info("Download complete.")
-            
+
         except Exception as e:
             logger.error(f"Failed to download image: {e}")
             if os.path.exists(temp_path):
                 os.remove(temp_path)
             raise
+
+
+class DoubaoImageModel(ImageGenModel):
+    """Image generation using Volcengine ARK (Doubao SeeDream)."""
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.params = config.get('params', {})
+
+    @property
+    def api_key(self):
+        api_key = os.getenv("ARK_API_KEY")
+        if not api_key:
+            logger.warning("ARK_API_KEY not found in environment variables.")
+        return api_key
+
+    def generate(self, prompt: str, output_path: str, ref_image_path: str = None, ref_image_paths: list = None, model_name: str = None, **kwargs) -> Tuple[str, float]:
+        try:
+            from volcenginesdkarkruntime import Ark
+        except ImportError:
+            raise RuntimeError("volcenginesdkarkruntime not installed. Run: pip install 'volcengine-python-sdk[ark]'")
+
+        # Ignore non-doubao model names (e.g. "wan2.6-t2i" passed during auto-fallback)
+        if model_name and model_name.startswith("doubao-"):
+            final_model_name = model_name
+        else:
+            final_model_name = self.params.get('model_name', 'doubao-seedream-5-0-260128')
+        size = kwargs.pop('size', self.params.get('size', '1024x1024'))
+
+        # Doubao API 要求 size 格式为 'WIDTHxHEIGHT'
+        size = size.replace('*', 'x')
+
+        # Doubao SeeDream 最低像素要求 3686400，不足时等比例放大
+        DOUBAO_MIN_PIXELS = 3686400
+        try:
+            w, h = map(int, size.split('x'))
+            pixels = w * h
+            if pixels < DOUBAO_MIN_PIXELS:
+                import math
+                scale = math.ceil(math.sqrt(DOUBAO_MIN_PIXELS / pixels))
+                w, h = w * scale, h * scale
+                logger.info(f"Size {size} below Doubao minimum, scaled to {w}x{h}")
+                size = f"{w}x{h}"
+        except (ValueError, ZeroDivisionError):
+            pass
+
+        logger.info(f"Doubao SeeDream generation: model={final_model_name}, size={size}, prompt={prompt[:100]}")
+
+        client = Ark(
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            api_key=self.api_key
+        )
+
+        # Collect reference images as base64 data URLs
+        ref_images = []
+        all_ref_paths = []
+        if ref_image_path:
+            all_ref_paths.append(ref_image_path)
+        if ref_image_paths:
+            all_ref_paths.extend(ref_image_paths)
+
+        for path in all_ref_paths:
+            if os.path.exists(path):
+                import base64
+                with open(path, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode('utf-8')
+                ext = os.path.splitext(path)[1].lower()
+                mime = "image/png" if ext == ".png" else "image/jpeg"
+                ref_images.append(f"data:{mime};base64,{b64}")
+            elif path.startswith("http"):
+                ref_images.append(path)
+
+        api_start = time.time()
+
+        try:
+            gen_kwargs = {
+                "model": final_model_name,
+                "prompt": prompt,
+                "size": size,
+                "response_format": "url",
+                "sequential_image_generation": "disabled",
+                "watermark": False,
+            }
+            if ref_images:
+                gen_kwargs["image"] = ref_images
+
+            logger.info(f"Calling images.generate: model={final_model_name}, size={size}, refs={len(ref_images)}")
+            response = client.images.generate(**gen_kwargs)
+
+            if not response.data or len(response.data) == 0:
+                raise RuntimeError(f"No image data in response: {response}")
+
+            image_url = response.data[0].url
+            if not image_url:
+                raise RuntimeError(f"No image URL in response data: {response.data[0]}")
+
+            logger.info(f"Doubao image generated: {image_url[:80]}...")
+            self._download_image(image_url, output_path)
+            api_duration = time.time() - api_start
+            return output_path, api_duration
+
+        except Exception as e:
+            logger.error(f"Doubao image generation error: {e}")
+            raise
+
+    def _download_image(self, url: str, output_path: str):
+        logger.info(f"Downloading image to {output_path}...")
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        response = requests.get(url, stream=True, timeout=60)
+        response.raise_for_status()
+        with open(output_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        logger.info("Download complete.")
