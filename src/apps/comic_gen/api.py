@@ -121,8 +121,24 @@ def signed_response(data):
 @app.get("/system/check")
 async def check_system():
     """Check system dependencies (ffmpeg, etc.) and configuration."""
-    from utils.system_check import run_system_checks
+    from ...utils.system_check import run_system_checks
     return run_system_checks()
+
+
+@app.post("/system/install-ffmpeg")
+async def install_ffmpeg_endpoint(background_tasks: BackgroundTasks):
+    from ...utils.ffmpeg_installer import install_ffmpeg, get_install_status
+    status = get_install_status()
+    if status["status"] in ("downloading", "extracting"):
+        raise HTTPException(400, "安装正在进行中")
+    background_tasks.add_task(install_ffmpeg)
+    return {"message": "安装已启动"}
+
+
+@app.get("/system/install-ffmpeg/status")
+async def install_ffmpeg_status():
+    from ...utils.ffmpeg_installer import get_install_status
+    return get_install_status()
 
 
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Play, Check, ChevronRight, Loader2, Film, AlertTriangle, Layout, Clock, FileText, Download, ExternalLink } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
@@ -11,12 +11,65 @@ import { useSystemStatus } from "@/components/project/SystemStatusProvider";
 export default function VideoAssembly() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
-    const { checked: sysChecked, ffmpegAvailable } = useSystemStatus();
+    const { checked: sysChecked, ffmpegAvailable, recheckSystem } = useSystemStatus();
 
     const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
     const [isMerging, setIsMerging] = useState(false);
     const [mergeError, setMergeError] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+
+    // FFmpeg install state
+    const [installStatus, setInstallStatus] = useState<string>("idle");
+    const [installProgress, setInstallProgress] = useState(0);
+    const [installMessage, setInstallMessage] = useState("");
+    const [installError, setInstallError] = useState<string | null>(null);
+    const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const stopPolling = useCallback(() => {
+        if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => {
+        return () => stopPolling();
+    }, [stopPolling]);
+
+    const handleInstallFfmpeg = async () => {
+        setInstallError(null);
+        setInstallStatus("downloading");
+        setInstallProgress(0);
+        setInstallMessage("正在启动...");
+
+        try {
+            await api.installFfmpeg();
+        } catch (e: any) {
+            const msg = e?.response?.data?.detail || e?.message || "启动安装失败";
+            setInstallStatus("failed");
+            setInstallError(msg);
+            return;
+        }
+
+        pollRef.current = setInterval(async () => {
+            try {
+                const s = await api.getInstallFfmpegStatus();
+                setInstallStatus(s.status);
+                setInstallProgress(s.progress ?? 0);
+                setInstallMessage(s.message ?? "");
+
+                if (s.status === "completed") {
+                    stopPolling();
+                    recheckSystem();
+                } else if (s.status === "failed") {
+                    stopPolling();
+                    setInstallError(s.error || "安装失败");
+                }
+            } catch {
+                // 网络抖动，忽略单次失败
+            }
+        }, 1500);
+    };
 
     // Group videos by frame
     const videosByFrame = useMemo(() => {
@@ -126,16 +179,51 @@ export default function VideoAssembly() {
                             <div className="flex-1 text-sm">
                                 <span className="text-amber-400 font-medium">FFmpeg 未安装</span>
                                 <p className="text-amber-400/70 text-xs mt-1">
-                                    视频合并功能需要 FFmpeg。请下载安装后重启应用。
+                                    视频合并功能需要 FFmpeg。
                                 </p>
-                                <a
-                                    href="https://www.gyan.dev/ffmpeg/builds/"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-xs text-amber-300 hover:text-amber-200 underline mt-1"
-                                >
-                                    下载 FFmpeg (Windows) <ExternalLink size={12} />
-                                </a>
+
+                                {/* 安装按钮 / 进度 / 结果 */}
+                                {installStatus === "idle" || installStatus === "failed" ? (
+                                    <div className="mt-2 flex items-center gap-3 flex-wrap">
+                                        <button
+                                            onClick={handleInstallFfmpeg}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-md border border-amber-500/40 transition-colors"
+                                        >
+                                            <Download size={12} />
+                                            一键安装
+                                        </button>
+                                        <span className="text-amber-400/50 text-xs">或</span>
+                                        <a
+                                            href="https://www.gyan.dev/ffmpeg/builds/"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 text-xs text-amber-300 hover:text-amber-200 underline"
+                                        >
+                                            手动下载 <ExternalLink size={12} />
+                                        </a>
+                                        {installError && (
+                                            <p className="w-full text-xs text-red-400 mt-1">{installError}</p>
+                                        )}
+                                    </div>
+                                ) : installStatus === "downloading" || installStatus === "extracting" ? (
+                                    <div className="mt-2 space-y-1.5">
+                                        <div className="w-full h-2 bg-black/30 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-amber-500 rounded-full transition-all duration-300"
+                                                style={{ width: `${installProgress}%` }}
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-2 text-xs text-amber-400/70">
+                                            <Loader2 size={12} className="animate-spin" />
+                                            <span>{installMessage || "请稍候..."}</span>
+                                        </div>
+                                    </div>
+                                ) : installStatus === "completed" ? (
+                                    <div className="mt-2 flex items-center gap-1.5 text-xs text-green-400">
+                                        <Check size={14} />
+                                        <span>安装完成，正在刷新检测...</span>
+                                    </div>
+                                ) : null}
                             </div>
                         </div>
                     )}
